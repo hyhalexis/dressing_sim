@@ -1,5 +1,5 @@
-from .scratch_itch import ScratchItchEnv
-from .scratch_itch_mesh import ScratchItchMeshEnv
+from scratch_itch import ScratchItchEnv
+from scratch_itch_mesh import ScratchItchMeshEnv
 from .agents import pr2, baxter, sawyer, jaco, stretch, panda, human, human_mesh
 from .agents.pr2 import PR2
 from .agents.baxter import Baxter

@@ -1,4 +1,4 @@
-from .drinking import DrinkingEnv
+from drinking import DrinkingEnv
 from .agents import pr2, baxter, sawyer, jaco, stretch, panda, human
 from .agents.pr2 import PR2
 from .agents.baxter import Baxter

@@ -3,7 +3,7 @@ from gym import spaces
 import numpy as np
 import pybullet as p
 
-from .env import AssistiveEnv
+from env import AssistiveEnv
 from .agents.human_mesh import HumanMesh
 
 class SMPLXTestingEnv(AssistiveEnv):

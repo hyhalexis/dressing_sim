@@ -110,13 +110,13 @@ class Human(Agent):
             self.body_shape = np_random.uniform(0, 4, (1, self.num_body_shape))
         # Initialize human
         self.body, self.head_scale, self.out_mesh, self.vertices, self.joints = human_creation.create_human(static=static_human_base, limit_scale=self.limit_scale, specular_color=[0.1, 0.1, 0.1], gender=gender, body_shape=self.body_shape)
-        self.hand_radius = human_creation.hand_radius
-        self.elbow_radius = human_creation.elbow_radius
-        self.shoulder_radius = human_creation.shoulder_radius
+        self.hand_radius = human_creation.hand_radius * 0.9
+        self.elbow_radius = human_creation.elbow_radius * 0.9
+        self.shoulder_radius = human_creation.shoulder_radius * 0.9
 
-        self.upperarm_radius = human_creation.upperarm_radius
+        self.upperarm_radius = human_creation.upperarm_radius * 0.9
         self.upperarm_length = human_creation.upperarm_length
-        self.forearm_radius = human_creation.forearm_radius
+        self.forearm_radius = human_creation.forearm_radius * 0.9
         self.forearm_length = human_creation.forearm_length
         self.pecs_offset = human_creation.pecs_offset
 

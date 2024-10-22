@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 import cv2
 
-from .env import AssistiveEnv
+from env import AssistiveEnv
 from .agents.human_mesh import HumanMesh
 
 class BedPoseEnv(AssistiveEnv):

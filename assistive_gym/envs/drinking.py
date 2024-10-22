@@ -1,7 +1,7 @@
 import numpy as np
 import pybullet as p
 
-from .env import AssistiveEnv
+from env import AssistiveEnv
 
 class DrinkingEnv(AssistiveEnv):
     def __init__(self, robot, human):

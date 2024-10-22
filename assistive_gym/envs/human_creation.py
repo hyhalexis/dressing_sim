@@ -3,8 +3,8 @@ from gym import spaces
 import pybullet as p
 import numpy as np
 
-from .agents.human_mesh import HumanMesh
-from .agents.agent import Agent
+from agents.human_mesh import HumanMesh
+from agents.agent import Agent
 
 import pickle
 

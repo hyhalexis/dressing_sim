@@ -5,7 +5,7 @@ from screeninfo import get_monitors
 import pybullet as p
 from keras.models import load_model
 from gym.utils import seeding
-from .human_creation import HumanCreation
+from human_creation import HumanCreation
 from .agents import agent, human
 from .agents.agent import Agent
 from .agents.human import Human
@@ -15,7 +15,8 @@ class BaseEnv:
         self.time_step = time_step
         self.frame_skip = frame_skip
         self.gravity = gravity
-        if render:
+        if True:
+        # if render:
             self.gui = True
             try:
                 self.width = get_monitors()[0].width
@@ -24,9 +25,9 @@ class BaseEnv:
                 self.width = 1920
                 self.height = 1080
             self.id = p.connect(p.GUI, options='--background_color_red=0.8 --background_color_green=0.9 --background_color_blue=1.0 --width=%d --height=%d' % (self.width, self.height))
-        else:
-            self.gui = False
-            self.id = p.connect(p.DIRECT)
+        # else:
+        #     self.gui = False
+        #     self.id = p.connect(p.DIRECT)
 
         self.np_random, seed = seeding.np_random(seed)
         self.directory = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'assets')

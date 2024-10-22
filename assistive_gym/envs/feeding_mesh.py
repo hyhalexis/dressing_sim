@@ -3,7 +3,7 @@ from gym import spaces
 import numpy as np
 import pybullet as p
 
-from .feeding import FeedingEnv
+from feeding import FeedingEnv
 from .agents import furniture
 from .agents.furniture import Furniture
 

@@ -1,17 +1,17 @@
-from .dressing import DressingEnv
-from .agents import pr2, baxter, sawyer, jaco, stretch, panda, human
-from .agents.pr2 import PR2
-from .agents.baxter import Baxter
-from .agents.sawyer import Sawyer
-from .agents.jaco import Jaco
-from .agents.stretch import Stretch
-from .agents.panda import Panda
-from .agents.human import Human
+from dressing import DressingEnv
+from agents import pr2, baxter, sawyer, jaco, stretch, panda, human
+from agents.pr2 import PR2
+from agents.baxter import Baxter
+from agents.sawyer import Sawyer
+from agents.jaco import Jaco
+from agents.stretch import Stretch
+from agents.panda import Panda
+from agents.human import Human
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 from ray.tune.registry import register_env
 
-robot_arm = 'left'
-human_controllable_joint_indices = human.left_arm_joints
+robot_arm = 'right'
+human_controllable_joint_indices = human.right_arm_joints
 class DressingPR2MeshEnv(DressingEnv):
     def __init__(self):
         super(DressingPR2MeshEnv, self).__init__(robot=PR2(robot_arm), human=None)
@@ -57,7 +57,7 @@ register_env('assistive_gym:DressingBaxterHuman-v1', lambda config: DressingBaxt
 
 class DressingSawyerHumanEnv(DressingEnv, MultiAgentEnv):
     def __init__(self):
-        super(DressingSawyerHumanEnv, self).__init__(robot=Sawyer(robot_arm), human=Human(human_controllable_joint_indices, controllable=True))
+        super(DressingSawyerHumanEnv, self).__init__(robot=Sawyer(robot_arm), human=Human(human_controllable_joint_indices, controllable=False))
 register_env('assistive_gym:DressingSawyerHuman-v1', lambda config: DressingSawyerHumanEnv())
 
 class DressingJacoHumanEnv(DressingEnv, MultiAgentEnv):

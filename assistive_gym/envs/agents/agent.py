@@ -74,6 +74,23 @@ class Agent:
         real_pos, real_orient = p.multiplyTransforms(base_pos_inv, base_orient_inv, pos, orient if len(orient) == 4 else self.get_quaternion(orient), physicsClientId=self.id)
         return np.array(real_pos), np.array(real_orient)
 
+    def convert_to_base_frame(self, real_pos, real_orient=[0, 0, 0, 1]):
+        # Get the base position and orientation
+        base_pos, base_orient = self.get_base_pos_orient()
+        
+        # Convert the real orientation to a quaternion if it is not already
+        if len(real_orient) != 4:
+            real_orient = self.get_quaternion(real_orient)
+        
+        # Invert the base transform
+        base_pos_inv, base_orient_inv = p.invertTransform(base_pos, base_orient, physicsClientId=self.id)
+        
+        # Multiply transforms to get the position and orientation in the base frame
+        base_pos_frame, base_orient_frame = p.multiplyTransforms(base_pos_inv, base_orient_inv, real_pos, real_orient, physicsClientId=self.id)
+        
+        return np.array(base_pos_frame), np.array(base_orient_frame)
+
+
     def get_base_pos_orient(self):
         return self.get_pos_orient(self.base)
 

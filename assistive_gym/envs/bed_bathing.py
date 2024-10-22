@@ -2,7 +2,7 @@ import time
 import numpy as np
 import pybullet as p
 
-from .env import AssistiveEnv
+from env import AssistiveEnv
 from .agents import furniture
 from .agents.furniture import Furniture
 

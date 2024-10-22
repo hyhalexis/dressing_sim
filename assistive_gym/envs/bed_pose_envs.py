@@ -1,4 +1,4 @@
-from .bed_pose import BedPoseEnv
+from bed_pose import BedPoseEnv
 from .agents import pr2, stretch, human
 from .agents.pr2 import PR2
 from .agents.stretch import Stretch

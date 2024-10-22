@@ -132,7 +132,7 @@ class Util:
                 return True
         return False
 
-    def sleeve_on_arm_reward(self, triangle1_points, triangle2_points, shoulder_pos, elbow_pos, wrist_pos, hand_radius, elbow_radius, shoulder_radius):
+    def sleeve_on_arm_reward(self, triangle1_points, triangle2_points, triangle3_points, triangle4_points, shoulder_pos, elbow_pos, wrist_pos, hand_radius, elbow_radius, shoulder_radius):
         # Use full length of arm, rather than from hand center to elbow center
         wrist_pos, elbow_pos, shoulder_pos = np.array(wrist_pos), np.array(elbow_pos), np.array(shoulder_pos)
         hand_end_pos = wrist_pos + (wrist_pos - elbow_pos) / np.linalg.norm(wrist_pos - elbow_pos) * hand_radius*2
@@ -154,7 +154,7 @@ class Util:
 
         # Check if at least one point exists above and below both planes
         # v.dot(p - p0), p0 on plane, v is normal_forearm of a plane. v = tangent_forearm, v = binormal_forearm, p0 = elbow_end_pos
-        all_points = np.concatenate([triangle1_points, triangle2_points], axis=0)
+        all_points = np.concatenate([triangle1_points, triangle2_points, triangle3_points, triangle4_points], axis=0)
         # tangent_forearm_points = np.dot(tangent_forearm, (all_points - elbow_end_pos).T)
         # binormal_forearm_points = np.dot(binormal_forearm, (all_points - elbow_end_pos).T)
         tangent_forearm_points = np.dot(tangent_forearm, (all_points - hand_end_pos).T)
@@ -176,8 +176,14 @@ class Util:
         # https://stackoverflow.com/questions/42740765/intersection-between-line-and-triangle-in-3d
         forearm_intersects_triangle1 = self.line_intersects_triangle(triangle1_points[0], triangle1_points[1], triangle1_points[2], hand_end_pos, elbow_end_pos)
         forearm_intersects_triangle2 = self.line_intersects_triangle(triangle2_points[0], triangle2_points[1], triangle2_points[2], hand_end_pos, elbow_end_pos)
+        forearm_intersects_triangle3 = self.line_intersects_triangle(triangle3_points[0], triangle3_points[1], triangle3_points[2], hand_end_pos, elbow_end_pos)
+        forearm_intersects_triangle4 = self.line_intersects_triangle(triangle4_points[0], triangle4_points[1], triangle4_points[2], hand_end_pos, elbow_end_pos)
+
         upperarm_intersects_triangle1 = self.line_intersects_triangle(triangle1_points[0], triangle1_points[1], triangle1_points[2], elbow_end_pos, shoulder_end_pos)
         upperarm_intersects_triangle2 = self.line_intersects_triangle(triangle2_points[0], triangle2_points[1], triangle2_points[2], elbow_end_pos, shoulder_end_pos)
+        upperarm_intersects_triangle3 = self.line_intersects_triangle(triangle3_points[0], triangle3_points[1], triangle3_points[2], elbow_end_pos, shoulder_end_pos)
+        upperarm_intersects_triangle4 = self.line_intersects_triangle(triangle4_points[0], triangle4_points[1], triangle4_points[2], elbow_end_pos, shoulder_end_pos)
+
         sleeve_center = np.mean(all_points, axis=0)
         distance_to_shoulder = np.linalg.norm(shoulder_end_pos - sleeve_center)
         distance_to_elbow = np.linalg.norm(elbow_end_pos - sleeve_center)
@@ -191,8 +197,8 @@ class Util:
         distance_along_forearm = np.linalg.norm(sleeve_center - hand_end_pos)
         distance_along_upperarm = np.linalg.norm(sleeve_center - elbow_pos)
 
-        forearm_in_sleeve = points_above_below_forearm and (forearm_intersects_triangle1 or forearm_intersects_triangle2)
-        upperarm_in_sleeve = points_above_below_upperarm and (upperarm_intersects_triangle1 or upperarm_intersects_triangle2)
+        forearm_in_sleeve = points_above_below_forearm and (forearm_intersects_triangle1 or forearm_intersects_triangle2 or forearm_intersects_triangle3 or forearm_intersects_triangle4)
+        upperarm_in_sleeve = points_above_below_upperarm and (upperarm_intersects_triangle1 or upperarm_intersects_triangle2 or upperarm_intersects_triangle3 or upperarm_intersects_triangle4)
 
         # Find the point at which the arm central axis intersects one of the triangles
         # p0, p1, p2 = triangle1_points
@@ -202,3 +208,19 @@ class Util:
 
         return forearm_in_sleeve, upperarm_in_sleeve, distance_along_forearm, distance_along_upperarm, distance_to_hand, distance_to_elbow, distance_to_shoulder, np.linalg.norm(hand_end_pos - elbow_end_pos), np.linalg.norm(elbow_pos - shoulder_pos)
 
+    def downsample_mesh(garment, path_to_garment, scale=128):
+        output_path = os.path.join(self.directory, 'data/cloth3d/train/Tshirt', f'{garment}_reduced.obj')
+        mesh_in = o3d.io.read_triangle_mesh(path_to_garment)
+        mesh_in.compute_vertex_normals()
+
+        voxel_size = max(mesh_in.get_max_bound() - mesh_in.get_min_bound()) / scale
+        mesh_smp = mesh_in.simplify_vertex_clustering(
+            voxel_size=voxel_size,
+            contraction=o3d.geometry.SimplificationContraction.Average)
+        print(
+            f'Simplified mesh has {len(mesh_smp.vertices)} vertices and {len(mesh_smp.triangles)} triangles'
+        )
+
+        o3d.visualization.draw_geometries([mesh_smp])
+
+        o3d.io.write_triangle_mesh(output_path, mesh_smp)

@@ -1,4 +1,4 @@
-from .cloth_manip_figures import ClothManipEnv
+from cloth_manip_figures import ClothManipEnv
 from .agents import stretch, human
 from .agents.stretch import Stretch
 from .agents.human import Human

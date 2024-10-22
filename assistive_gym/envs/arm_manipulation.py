@@ -1,7 +1,7 @@
 import numpy as np
 import pybullet as p
 
-from .env import AssistiveEnv
+from env import AssistiveEnv
 from .agents import furniture, tool
 from .agents.furniture import Furniture
 from .agents.tool import Tool

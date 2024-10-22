@@ -3,7 +3,7 @@ from gym import spaces
 import numpy as np
 import pybullet as p
 
-from .scratch_itch import ScratchItchEnv
+from scratch_itch import ScratchItchEnv
 
 class ScratchItchMeshEnv(ScratchItchEnv):
     def __init__(self, robot, human):
