@@ -245,7 +245,13 @@ class AssistiveEnv(gym.Env):
                 agent_joint_angles = np.concatenate([[a]*d for a, d in zip(agent_joint_angles, self.robot.action_duplication)])
                 agent.control(agent.all_controllable_joints, agent_joint_angles, agent.gains, agent.forces)
             else:
-                agent.control(agent.controllable_joint_indices, agent_joint_angles, gains[i], forces[i])
+                for _ in range(10):
+                    agent.control(agent.controllable_joint_indices, agent_joint_angles, gains[i], forces[i])
+                    curr_joint_angles = agent.get_joint_angles(agent.controllable_joint_indices)
+                    err = np.linalg.norm(curr_joint_angles - agent_joint_angles)
+                    if err < 1e-4:
+                        break
+                
         if step_sim:
             # Update all agent positions
             for _ in range(self.frame_skip):
@@ -391,7 +397,7 @@ class AssistiveEnv(gym.Env):
         # get a depth image
         rgba, depth, segmentation_mask = self.get_camera_image_depth()
         image = Image.fromarray(rgba[..., :3], 'RGB')
-        image.save('./new_image.png')
+        image.save('./new_image_{}_{}_{}_{}_{}.png'.format(self.garment, self.elastic_stiffness, self.damping_stiffness, self.all_direction, self.bending_stiffnes))
         # import pdb;pdb.set_trace()
 
         rgba = rgba.reshape((-1, 4))

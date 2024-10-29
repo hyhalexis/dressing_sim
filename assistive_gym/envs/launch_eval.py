@@ -26,7 +26,8 @@ def main(mode, debug, dry):
 
     vg.add('variant_path', ['/home/alexishao/assistive-gym-dressing/assistive-gym-fem/assistive_gym/envs/variant.json'])
     vg.add('actor_load_name', ['/home/alexishao/assistive-gym-dressing/assistive-gym-fem/assistive_gym/envs/ckpt/actor_1900106.pt'])
-    
+    # vg.add('actor_load_name', ['/home/alexishao/assistive-gym-dressing/assistive-gym-fem/assistive_gym/envs/ckpt/actor_best_test_600023_0.65914.pt'])
+
     vg.add('observation_mode', ['real_partial_pc'])
     # vg.add('observation_mode', ['pointcloud_3'])
     # vg.add('real_partial_pc_voxel_size', [0.00625 * 4])

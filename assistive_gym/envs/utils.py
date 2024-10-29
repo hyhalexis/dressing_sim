@@ -434,7 +434,7 @@ def show_line_and_triangle(forearm_distance, upperarm_distance, img_width, img_h
 
     #plt.show()
     #plt.cla()
-    #plt.close("all")
+    plt.close("all")
 
     return image_from_plot
 

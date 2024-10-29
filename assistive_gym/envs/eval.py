@@ -131,6 +131,8 @@ def evaluate(env, agent, video_dir, step, args):
 
             print('action', step_action)
             obs, reward, done, info = env.step(step_action)
+            if obs is None: # collision avoidance-skip action
+                continue
             traj_obses.append(obs)
             whole_arm_ratios.append(info['whole_arm_ratio'])
             upper_arm_ratios.append(info['upperarm_ratio'])
@@ -152,7 +154,8 @@ def evaluate(env, agent, video_dir, step, args):
         with open(os.path.join(video_dir, '{}.pkl'.format(env.garment)), 'wb') as f:
             pickle.dump(traj_obses, f)
 
-        save_numpy_as_gif(np.array(pc_images), os.path.join(video_dir, '{}.gif'.format(env.garment)))
+        if False:
+            save_numpy_as_gif(np.array(pc_images), os.path.join(video_dir, '{}.gif'.format(env.garment)))
 
         infos.append(ep_info)
         traj_rewards.append(rewards)

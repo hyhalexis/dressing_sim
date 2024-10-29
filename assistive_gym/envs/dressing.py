@@ -12,6 +12,7 @@ import open3d as o3d
 from torch_geometric.data import Data
 from utils import voxelize_pc, show_line_and_triangle, line_intersecting_triangle
 import imageio
+import scipy
 
 class DressingEnv(AssistiveEnv):
     def __init__(self, robot, human, use_ik=True):
@@ -22,11 +23,12 @@ class DressingEnv(AssistiveEnv):
         self.arm_traj = None
         self.traj_direction = 1
         self.verbose = False
+        self.horizon = 270
 
         self.upper_w = 5
         self.task_w = 1
         self.force_w =0.001
-        self.collision_w = 1
+        self.collision_w = 0.01
         self.force_threshold = 1000
         self.collision_threshold = 0.01
         self.particle_radius = 0.00625
@@ -40,7 +42,16 @@ class DressingEnv(AssistiveEnv):
         self.center_align_reward_w = 0.05
         self.center_align_penalty_w = 0.02
 
-        self.line1_extend_factor = 0.05
+        self.elastic_stiffness = 0.5
+        self.damping_stiffness = 0.01
+        self.bending_stiffnes = 0.1
+        self.all_direction = 0
+        self.useNeoHookean = 1
+
+        self.arm_points = np.zeros((1,3))
+        self.collision_kd_tree = scipy.spatial.KDTree(self.arm_points)
+
+        self.line1_extend_factor = 0
 
         self.images = []
         self.pc_images = []
@@ -90,7 +101,6 @@ class DressingEnv(AssistiveEnv):
         self.intersect_point2 = None
         for triangle_idx in self.reward_triangle_idxes:
             intersect_line1, intersect_point1 = line_intersecting_triangle(
-                # NOTE yufei: this extension here might be casuing overshooting problems for the policy.
                 line1_ori - line1_dir * self.line1_extend_factor, 
                 line1_dir, 
                 mesh_points[triangle_idx[0]], mesh_points[triangle_idx[1]], mesh_points[triangle_idx[2]])
@@ -149,13 +159,14 @@ class DressingEnv(AssistiveEnv):
         intersection = self.intersect_point2 if on_upperarm else self.intersect_point1
         center_to_intersect_distance = 0
 
-        if intersection is not None:
+        if on_upperarm:
+        # if intersection is not None:
             center_to_intersect_distance = np.linalg.norm(shoulder_center - intersection)
             print('dist:', center_to_intersect_distance, 'upper ratio:', self.upperarm_distance / self.upper_arm_length, 'fore ratio:', self.forearm_distance / self.forearm_length)
             if center_to_intersect_distance < self.near_center_range:
                 stay_close_to_intersection_reward = 1 * self.center_align_reward_w
             if center_to_intersect_distance > self.far_center_range:
-                stay_close_to_intersection_reward = -1 * self.center_align_penalty_w * center_to_intersect_distance
+                stay_close_to_intersection_reward = -1 * self.center_align_penalty_w
         else:
             print('on upper:', on_upperarm, 'on forearm:', on_forearm)
         self.stay_close_to_intersection_reward = stay_close_to_intersection_reward
@@ -172,7 +183,7 @@ class DressingEnv(AssistiveEnv):
                 self.camera_width, self.camera_height, 
                 self.voxelized_observable_cloth_pc,
                 grasped_particles,
-                self.voxelized_observable_cloth_pc,
+                self.voxelized_observable_arm_pc,
                 cloth_shoulder_polygon_particle_pos, 
                 line1_ori - line1_dir * self.line1_extend_factor, line1_dir, line2_ori, line2_dir,
                 reward_start_pos, end_effector_pos, 
@@ -227,15 +238,24 @@ class DressingEnv(AssistiveEnv):
         #     action = np.concatenate([action['robot'], action['human']])
         # action = np.ones(7)
         if self.use_ik:
-            self.take_step(action, action_multiplier=0.01, ik=True)
+            self.take_step(action, ik=True)
         else:
-            self.take_step(action, action_multiplier=0.003)
+            self.take_step(action)
+
+        end_effector_pos, end_effector_orient = self.robot.get_pos_orient(self.robot.left_end_effector)
+        new_ee_pos = end_effector_pos + action[:3]
+
+        min_distances_kd_tree, _ = self.collision_kd_tree.query(new_ee_pos, workers=8)
+        min_distance = np.min(min_distances_kd_tree)
+        if min_distance < self.collision_threshold:
+            print('skipped!')
+            return None, None, None, None
 
         obs = self._get_obs()
         reward = self.compute_reward()
-        done = self.iteration >= 200
+        done = self.iteration >= self.horizon
         if done:
-            imageio.mimsave('simulation.gif', self.images, format='GIF', duration=30)
+            imageio.mimsave('simulation_{}_{}_{}_{}_{}_{}_{}.gif'.format(self.garment, self.elastic_stiffness, self.damping_stiffness, self.all_direction, self.bending_stiffnes, self.horizon, self.useNeoHookean), self.images, format='GIF', duration=30)
             # imageio.mimsave('simulation_pc.gif', self.pc_images, format='GIF', duration=30)
 
         info = self._get_info()
@@ -257,10 +277,11 @@ class DressingEnv(AssistiveEnv):
         ret_dict['upperarm_ratio'] = self.upperarm_distance / self.upper_arm_length
         ret_dict['whole_arm_ratio'] = (self.upperarm_distance + self.forearm_distance) / (self.upper_arm_length + self.forearm_length)
         ret_dict['collision_penalty'] = self.collision_penalty * self.collision_w
+        ret_dict['gripper closes dist'] = self.closest_dist
+        ret_dict['force on human'] = self.total_force_on_human
         # ret_dict['stay_close_to_intersection_reward'] = self.stay_close_to_intersection_reward
         # ret_dict['center_to_intersect_distance'] = self.center_to_intersect_distance
         ret_dict['reward'] = self.reward
-        print('length', self.upper_arm_length, self.forearm_length)
         return ret_dict
 
     def _get_obs(self, agent=None):
@@ -297,8 +318,9 @@ class DressingEnv(AssistiveEnv):
         # self.pc_images.append(merged_pc)
 
 
-        points = arm_points
-        if self.verbose:
+        self.arm_points = arm_points
+        self.verbose = self.iteration > 130
+        if False:
         # if True:
             def create_axes(length=0.5):
                 # Create lines for the axes
@@ -393,13 +415,10 @@ class DressingEnv(AssistiveEnv):
         observable_cloth_pc = observable_cloth_pc[:, [1 ,2 ,0]]
         # observable_cloth_pc = cloth_points
 
-        print(max(observable_cloth_pc[:,1]), min(observable_cloth_pc[:,1]))
         observable_arm_pc= arm_points[arm_depth > 0].astype(np.float32)
         observable_arm_pc = observable_arm_pc[:, [1 ,2 ,0]]
 
         # observable_arm_pc = arm_points
-
-        print(max(observable_arm_pc[:,1]), min(observable_arm_pc[:,1]))
 
         self.voxelized_observable_arm_pc = voxelize_pc(observable_arm_pc, 0.00625 * 10)
         self.voxelized_observable_cloth_pc = voxelize_pc(observable_cloth_pc, 0.00625 * 10)
@@ -413,14 +432,50 @@ class DressingEnv(AssistiveEnv):
         categories[:partial_pc.shape[0], 0] = 1
         categories[partial_pc.shape[0]:, 1] = 1
         data = Data(pos=torch.from_numpy(all_points).float(), x=torch.from_numpy(categories).float())
+        pc = data.pos.cpu().detach().numpy()
+
+        if False:
+            def create_axes(ax, length=0.5):
+                # Create lines for the axes
+                lines = [
+                    [[0, 0, 0], [length, 0, 0]],  # X axis
+                    [[0, 0, 0], [0, length, 0]],  # Y axis
+                    [[0, 0, 0], [0, 0, length]]   # Z axis
+                ]
+                
+                # Set colors for the axes
+                colors = ['r', 'g', 'b']  # Red, Green, Blue
+
+                # Plot the axes
+                for line, color in zip(lines, colors):
+                    ax.plot3D(*zip(*line), color=color)
+
+            # Create figure and 3D axis
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+
+            # Create and plot axes
+            create_axes(ax, length=0.5)
+
+            # Plot the point cloud
+            if pc is not None and len(pc) > 0:
+                ax.scatter(pc[:, 0], pc[:, 1], pc[:, 2], c='k', s=10)  # Point color is black, size 10
+
+            # Set labels
+            ax.set_xlabel('X axis')
+            ax.set_ylabel('Y axis')
+            ax.set_zlabel('Z axis')
+
+            # Show the plot
+            plt.show()
         # print(data.pos)
-        from matplotlib import pyplot as plt
-        ax = plt.axes(projection='3d')
-        ax.scatter(self.voxelized_observable_arm_pc[:, 0], self.voxelized_observable_arm_pc[:, 1], self.voxelized_observable_arm_pc[:, 2], color='red')
-        ax.scatter(self.voxelized_observable_cloth_pc[:, 0], self.voxelized_observable_cloth_pc[:, 1], self.voxelized_observable_cloth_pc[:, 2], color='blue')
-        ax.set_xlabel('X Axis Label')
-        ax.set_ylabel('Y Axis Label')
-        ax.set_zlabel('Z Axis Label')
+        # from matplotlib import pyplot as plt
+        # ax = plt.axes(projection='3d')
+        # ax.scatter(self.voxelized_observable_arm_pc[:, 0], self.voxelized_observable_arm_pc[:, 1], self.voxelized_observable_arm_pc[:, 2], color='red')
+        # ax.scatter(self.voxelized_observable_cloth_pc[:, 0], self.voxelized_observable_cloth_pc[:, 1], self.voxelized_observable_cloth_pc[:, 2], color='blue')
+        # ax.set_xlabel('X Axis Label')
+        # ax.set_ylabel('Y Axis Label')
+        # ax.set_zlabel('Z Axis Label')
         # plt.show()
         return data
 
@@ -542,7 +597,7 @@ class DressingEnv(AssistiveEnv):
         
         # self.cloth = p.loadSoftBody(path_to_garment, scale=cloth_scales[garment], mass=0.16, useNeoHookean=0, useBendingSprings=1, useMassSpring=1, springElasticStiffness=10, springDampingStiffness=0.1, springDampingAllDirections=0, springBendingStiffness=0.1, useSelfCollision=1, collisionMargin=0.001, frictionCoeff=0.5, useFaceContact=1, physicsClientId=self.id)
         # p.clothParams(self.cloth, kLST=0.055, kAST=1.0, kVST=0.5, kDP=0.01, kDG=10, kDF=0.39, kCHR=1.0, kKHR=1.0, kAHR=1.0, piterations=5, physicsClientId=self.id)
-        self.cloth = p.loadSoftBody(path_to_garment, scale=cloth_scales[garment], mass=0.15, useBendingSprings=1, useMassSpring=1, springElasticStiffness=5, springDampingStiffness=0.01, springDampingAllDirections=1, springBendingStiffness=0, useSelfCollision=1, collisionMargin=0.0001, frictionCoeff=0.1, useFaceContact=1, physicsClientId=self.id)
+        self.cloth = p.loadSoftBody(path_to_garment, scale=cloth_scales[garment], mass=0.16, useNeoHookean=self.useNeoHookean, useBendingSprings=1, useMassSpring=1, springElasticStiffness=self.elastic_stiffness, springDampingStiffness=self.damping_stiffness, springDampingAllDirections=self.all_direction, springBendingStiffness=self.bending_stiffnes, useSelfCollision=1, collisionMargin=0.001, frictionCoeff=0.1, useFaceContact=1, physicsClientId=self.id)
 
         print('loaded cloth')
         # self.cloth = p.loadSoftBody(os.path.join(self.directory, 'data', 'Tshirt-4.obj'), scale=cloth_scales[garment], mass=0.15, useBendingSprings=1, useMassSpring=1, springElasticStiffness=5, springDampingStiffness=0.01, springDampingAllDirections=1, springBendingStiffness=0, useSelfCollision=1, collisionMargin=0.0001, frictionCoeff=0.1, useFaceContact=1, physicsClientId=self.id)
