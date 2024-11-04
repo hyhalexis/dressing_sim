@@ -56,8 +56,8 @@ class DressingBaxterHumanEnv(DressingEnv, MultiAgentEnv):
 register_env('assistive_gym:DressingBaxterHuman-v1', lambda config: DressingBaxterHumanEnv())
 
 class DressingSawyerHumanEnv(DressingEnv, MultiAgentEnv):
-    def __init__(self):
-        super(DressingSawyerHumanEnv, self).__init__(robot=Sawyer(robot_arm), human=Human(human_controllable_joint_indices, controllable=False))
+    def __init__(self, **kwargs):
+        super(DressingSawyerHumanEnv, self).__init__(robot=Sawyer(robot_arm), human=Human(human_controllable_joint_indices, controllable=True), **kwargs)
 register_env('assistive_gym:DressingSawyerHuman-v1', lambda config: DressingSawyerHumanEnv())
 
 class DressingJacoHumanEnv(DressingEnv, MultiAgentEnv):

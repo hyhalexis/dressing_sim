@@ -16,8 +16,6 @@ from agents.robot import Robot
 from agents.panda import Panda
 from agents.tool import Tool
 from agents.furniture import Furniture
-from scipy.spatial.transform import Rotation as R
-from utils import quaternion_to_matrix, axis_angle_to_quaternion, rotation_matrix_to_euler_angles, rotation_matrix_to_quaternion
 
 class AssistiveEnv(gym.Env):
     def __init__(self, robot=None, human=None, task='', obs_robot_len=0, obs_human_len=0, time_step=0.02, frame_skip=5, render=False, gravity=-9.81, seed=1001, deformable=False):
@@ -31,6 +29,7 @@ class AssistiveEnv(gym.Env):
         self.view_matrix = None
         self.deformable = deformable
         self.seed(seed)
+        render = False
         if render:
             self.render()
         else:
@@ -198,7 +197,8 @@ class AssistiveEnv(gym.Env):
             # Append the new action to the current measured joint angles
             agent_joint_angles = agent.get_joint_angles(agent.controllable_joint_indices)
             if not ik or isinstance(agent, Human):
-                continue
+                # print('human', len(agent.controllable_joint_indices))
+
                 # Update the target robot/human joint angles based on the proposed action and joint limits
                 # below_lower_limits = agent_joint_angles + action < agent.controllable_joint_lower_limits
                 # above_upper_limits = agent_joint_angles + action > agent.controllable_joint_upper_limits
@@ -206,30 +206,26 @@ class AssistiveEnv(gym.Env):
                 # action[above_upper_limits] = 0
                 # agent_joint_angles[below_lower_limits] = agent.controllable_joint_lower_limits[below_lower_limits]
                 # agent_joint_angles[above_upper_limits] = agent.controllable_joint_upper_limits[above_upper_limits]
-                if isinstance(agent, Human):
-                    agent_joint_angles = self.arm_traj[self.arm_traj_idx]
-                    curr_pos, curr_orient = self.human.get_pos_orient(18)
-                    print('idx', self.arm_traj_idx, 'curr', curr_pos)
+                if isinstance(agent, Human) and agent.impairment == 'tremor':
+                    pass
+                    # agent_joint_angles = self.arm_traj[self.arm_traj_idx]
+                    # curr_pos, curr_orient = self.human.get_pos_orient(18)
+                    # print('idx', self.arm_traj_idx, 'curr', curr_pos)
                     
-                    # Update the index based on the direction
-                    self.arm_traj_idx += self.traj_direction
+                    # # Update the index based on the direction
+                    # self.arm_traj_idx += self.traj_direction
 
-                    if self.arm_traj_idx == len(self.arm_traj) - 1:
-                        self.traj_direction = -1
-                    elif self.arm_traj_idx == 0:
-                        self.traj_direction = 1
-                    
-                    for _ in range(10):
-                        agent.control(agent.controllable_joint_indices, agent_joint_angles, gains[i], forces[i])
-                        curr_joint_angles = agent.get_joint_angles(agent.controllable_joint_indices)
-                        err = np.linalg.norm(curr_joint_angles - agent_joint_angles)
-                        print('err', err)
-                        if err < 1e-4:
-                            break
+                    # if self.arm_traj_idx == len(self.arm_traj) - 1:
+                    #     self.traj_direction = -1
+                    # elif self.arm_traj_idx == 0:
+                    #     self.traj_direction = 1
 
                     # agent_joint_angles = agent.target_joint_angles + agent.tremors * (1 if self.iteration % 2 == 0 else -1)
+                else:
+                    pass
+                    # print('added action ', action)
+                    # agent_joint_angles += action
             else:
-                # continue
                 joint = agent.right_end_effector if 'right' in agent.controllable_joints else agent.left_end_effector
                 ik_indices = agent.right_arm_ik_indices if 'right' in agent.controllable_joints else agent.left_arm_ik_indices
                 # NOTE: Adding action to current pose can cause drift over time
@@ -240,41 +236,21 @@ class AssistiveEnv(gym.Env):
                 # print('Reached pos:', pos, 'Reached orient:', orient)
                 # print('Reached pos:', pos, 'Reached orient:', self.get_euler(orient))
                 pos += actions[:len(pos)]
-                
-                ee_cur_R = R.from_quat([orient[0], orient[1], orient[2], orient[3]])
-                rotation_R = R.from_rotvec(actions[3:])
-                new_ee_R = rotation_R * ee_cur_R
-                new_ee_quat = new_ee_R.as_quat()
-
-              # print(“time step {} executing translation {} axis angle {} rotation degree {}“.format(t, translation, axis_angle, rotation_angle_deg))
                 # orient += action[len(pos):]
-
-                # mimic real world implementaiton
-                # 1. turn quaterion into a rotation matrix: rot_cur
-                # 2. turn the delta axis angle into a rotation matrix, rot_delta
-                # 3. the new rotation matrix should be: rot_delta @ rot_cur
-                # 4. turn this back into the quaterion for ik solving.    
-                # curr_rot = quaternion_to_matrix(orient)
-                # rot_delta = quaternion_to_matrix(axis_angle_to_quaternion(actions[3:]))
-                # rot_matrix = rot_delta @ curr_rot
-                # new_rot = rotation_matrix_to_quaternion(rot_matrix)
-
-                # new_rot = self.get_quaternion(self.get_euler(orient) + actions[len(pos):]) # NOTE: RPY
-                # agent_joint_angles = agent.ik(joint, new_pos, orient, ik_indices, max_iterations=200, use_current_as_rest=True)
-
-                agent_joint_angles = agent.ik(joint, pos, new_ee_quat, ik_indices, max_iterations=200, use_current_as_rest=True)
-            # if isinstance(agent, Robot) and agent.action_duplication is not None:
-            #     agent_joint_angles = np.concatenate([[a]*d for a, d in zip(agent_joint_angles, self.robot.action_duplication)])
-            #     agent.control(agent.all_controllable_joints, agent_joint_angles, agent.gains, agent.forces)
-            
-            # else:
-                # for _ in range(10):
-                agent.control(agent.controllable_joint_indices, agent_joint_angles, gains[i], forces[i])
-                # curr_joint_angles = agent.get_joint_angles(agent.controllable_joint_indices)
-                    # err = np.linalg.norm(curr_joint_angles - agent_joint_angles)
-                    # print('err', err)
-                    # if err < 1e-4:
-                    #     break
+                orient = self.get_quaternion(self.get_euler(orient) + actions[len(pos):]) # NOTE: RPY
+                # print('Target pos:', pos, 'Target orient:', orient)
+                # print('Target pos:', pos, 'Target orient:', self.get_euler(orient) + action[len(pos):len(pos)+3])
+                agent_joint_angles = agent.ik(joint, pos, orient, ik_indices, max_iterations=200, use_current_as_rest=True)
+            if isinstance(agent, Robot) and agent.action_duplication is not None:
+                agent_joint_angles = np.concatenate([[a]*d for a, d in zip(agent_joint_angles, self.robot.action_duplication)])
+                agent.control(agent.all_controllable_joints, agent_joint_angles, agent.gains, agent.forces)
+            else:
+                for _ in range(10):
+                    agent.control(agent.controllable_joint_indices, agent_joint_angles, gains[i], forces[i])
+                    curr_joint_angles = agent.get_joint_angles(agent.controllable_joint_indices)
+                    err = np.linalg.norm(curr_joint_angles - agent_joint_angles)
+                    if err < 1e-4:
+                        break
                 
         if step_sim:
             # Update all agent positions
@@ -519,4 +495,3 @@ class AssistiveEnv(gym.Env):
         agent = Agent()
         agent.init(body, self.id, self.np_random, indices=-1)
         return agent
-

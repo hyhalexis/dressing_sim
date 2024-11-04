@@ -460,4 +460,107 @@ def line_intersecting_triangle(line_o, line_d, a, b, c):
     intersect = (np.abs(det) >= 1e-7) and (t >= 0.0) and (u >= 0.0) and (v >= 0.0) and (u+v <= 1.0)
     intersection = line_o + line_d * t
     return intersect, intersection
+
+def axis_angle_to_quaternion(axis_angle):
+    """
+    Convert rotations given as axis/angle to quaternions.
+
+    Args:
+        axis_angle: Rotations given as a vector in axis angle form,
+            as a tensor of shape (..., 3), where the magnitude is
+            the angle turned anticlockwise in radians around the
+            vector's direction.
+
+    Returns:
+        quaternions with real part first, as tensor of shape (..., 4).
+    """
+    angles = np.linalg.norm(axis_angle, axis=-1, keepdims=True)
+    half_angles = angles * 0.5
+    eps = 1e-6
+    small_angles = np.abs(angles) < eps
+    sin_half_angles_over_angles = np.empty_like(angles)
+    sin_half_angles_over_angles[~small_angles] = (
+        np.sin(half_angles[~small_angles]) / angles[~small_angles]
+    )
     
+    # For small angles
+    sin_half_angles_over_angles[small_angles] = (
+        0.5 - (angles[small_angles] * angles[small_angles]) / 48
+    )
+    
+    quaternions = np.concatenate(
+        [np.cos(half_angles), axis_angle * sin_half_angles_over_angles], axis=-1
+    )
+    return quaternions
+    
+def quaternion_to_matrix(quaternions):
+    """
+    Convert rotations given as quaternions to rotation matrices.
+
+    Args:
+        quaternions: quaternions with real part first,
+            as tensor of shape (..., 4).
+
+    Returns:
+        Rotation matrices as tensor of shape (..., 3, 3).
+    """
+    r, i, j, k = np.split(quaternions, 4, axis=-1)
+    two_s = 2.0 / np.sum(quaternions * quaternions, axis=-1, keepdims=True)
+
+    o = np.stack((
+        1 - two_s * (j * j + k * k),
+        two_s * (i * j - k * r),
+        two_s * (i * k + j * r),
+        two_s * (i * j + k * r),
+        1 - two_s * (i * i + k * k),
+        two_s * (j * k - i * r),
+        two_s * (i * k - j * r),
+        two_s * (j * k + i * r),
+        1 - two_s * (i * i + j * j),
+    ), axis=-1)
+    
+    return o.reshape(quaternions.shape[:-1] + (3, 3))
+
+def rotation_matrix_to_euler_angles(R):
+    """
+    Convert a rotation matrix to Euler angles (in radians).
+    The order of rotations is ZYX (yaw-pitch-roll).
+    
+    :param R: 3x3 rotation matrix
+    :return: Euler angles (yaw, pitch, roll)
+    """
+    if R[2, 0] < 1:
+        if R[2, 0] > -1:
+            pitch = np.arcsin(-R[2, 0])
+            yaw = np.arctan2(R[1, 0], R[0, 0])
+            roll = np.arctan2(R[2, 1], R[2, 2])
+        else:  # R[2, 0] == -1
+            pitch = np.pi / 2
+            yaw = -np.arctan2(-R[0, 1], R[1, 1])
+            roll = 0
+    else:  # R[2, 0] == 1
+        pitch = -np.pi / 2
+        yaw = np.arctan2(-R[0, 1], R[1, 1])
+        roll = 0
+    
+    return yaw, pitch, roll
+
+def rotation_matrix_to_quaternion(R):
+    """
+    Convert a rotation matrix to a quaternion.
+    
+    Parameters:
+    R (numpy.ndarray): A 3x3 rotation matrix.
+    
+    Returns:
+    numpy.ndarray: A quaternion [w, x, y, z].
+    """
+    if R.shape != (3, 3):
+        raise ValueError("Input must be a 3x3 rotation matrix.")
+    
+    w = np.sqrt(1 + R[0, 0] + R[1, 1] + R[2, 2]) / 2
+    x = (R[2, 1] - R[1, 2]) / (4 * w)
+    y = (R[0, 2] - R[2, 0]) / (4 * w)
+    z = (R[1, 0] - R[0, 1]) / (4 * w)
+    
+    return np.array([w, x, y, z])

@@ -41,6 +41,8 @@ def main(mode, debug, dry):
     vg.add('draw_pc', [False])
     vg.add('decompose_picker_action', [False])
     vg.add('train_reward_predictor', [False])
+    vg.add('render', [False])
+    vg.add('action_scale', [0.025])
 
     # vg.add('randomize_cloth_observation', [False])
     # vg.add('gripper_crop_lower_y', [0])

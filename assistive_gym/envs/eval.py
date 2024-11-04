@@ -101,11 +101,10 @@ def evaluate(env, agent, video_dir, step, args):
             step_action = action.reshape(-1, 6)[-1].flatten()
             # step_action[3] = 0
 
-            print('before', step_action[:3])
-
             # step_action[:3] *= 0.01
-            x, y, z = step_action[:3].copy() * 0.01
+            x, y, z = step_action[:3].copy() * args.action_scale
             x_r, y_r, z_r = step_action[3:].copy()
+            print('before', step_action)
 
             step_action[0] = z 
             step_action[1] = x
@@ -113,11 +112,8 @@ def evaluate(env, agent, video_dir, step, args):
 
             # step_action[3] = z_r
             step_action[3] = 0
-            step_action[4] = x_r
+            step_action[4] = 0
             step_action[5] = y_r
-
-            print('after', step_action[:3])
-
 
             dtheta = np.linalg.norm(step_action[3:])
             max_rot_axis_ang = (5. * np.pi / 180.)
@@ -154,11 +150,23 @@ def evaluate(env, agent, video_dir, step, args):
         with open(os.path.join(video_dir, '{}.pkl'.format(env.garment)), 'wb') as f:
             pickle.dump(traj_obses, f)
 
-        if False:
-            save_numpy_as_gif(np.array(pc_images), os.path.join(video_dir, '{}.gif'.format(env.garment)))
+        # if False:
+        save_numpy_as_gif(np.array(pc_images), os.path.join(video_dir, '{}.gif'.format(env.garment)))
 
         infos.append(ep_info)
         traj_rewards.append(rewards)
+        plt.plot(rewards)
+        plt.savefig(os.path.join(video_dir, 'rewards.png'))
+        plt.close('all')
+
+        plt.plot(whole_arm_ratios)
+        plt.savefig(os.path.join(video_dir, 'whole_arm_ratios.png'))
+        plt.close('all')
+
+        plt.plot(upper_arm_ratios)
+        plt.savefig(os.path.join(video_dir, 'upper_arm_ratios.png'))
+        plt.close('all')
+
 
         print("whole arm ratio {} upper arm ratio {}".format(info['whole_arm_ratio'], info['upperarm_ratio']))
         all_whole_arm_ratios.append(np.max(whole_arm_ratios))
@@ -230,7 +238,7 @@ def main(args):
         args.__dict__["seed"] = np.random.randint(1, 1000000)
     utils.set_seed_everywhere(args.seed)
 
-    env = DressingSawyerHumanEnv()
+    env = DressingSawyerHumanEnv(render=args.render)
     # env = normalize(env)
 
     # make directory
