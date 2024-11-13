@@ -156,12 +156,20 @@ class Agent:
         if linkB is not None:
             args['linkIndexB'] = linkB
         cp = p.getClosestPoints(**args)
+        # cp = sorted(cp, key=lambda c: c[8])  # sort by the contact distance
+
         linkA = [c[3] for c in cp]
         linkB = [c[4] for c in cp]
         posA = [c[5] for c in cp]
         posB = [c[6] for c in cp]
         contact_distance = [c[8] for c in cp]
+
+        # posA_closest = posA[0]
+        # posB_closest = posB[0]
+        # vector_distance = [posA_closest[i] - posB_closest[i] for i in range(3)]  # distance vector (x, y, z)
         return linkA, linkB, posA, posB, contact_distance
+
+        # return linkA, linkB, posA, posB, vector_distance, contact_distance
 
     def get_heights(self, set_on_ground=False):
         min_z = np.inf
@@ -272,16 +280,19 @@ class Agent:
         self.ik_upper_limits = np.array(self.ik_upper_limits)
 
     def enforce_joint_limits(self, indices=None):
-        if indices is None:
-            indices = self.all_joint_indices
-        joint_angles = self.get_joint_angles_dict(indices)
-        if self.lower_limits is None or len(indices) > len(self.lower_limits):
-            self.update_joint_limits()
-        for j in indices:
-            if joint_angles[j] < self.lower_limits[j]:
-                p.resetJointState(self.body, jointIndex=j, targetValue=self.lower_limits[j], targetVelocity=0, physicsClientId=self.id)
-            elif joint_angles[j] > self.upper_limits[j]:
-                p.resetJointState(self.body, jointIndex=j, targetValue=self.upper_limits[j], targetVelocity=0, physicsClientId=self.id)
+        pass
+        # if indices is None:
+        #     indices = self.all_joint_indices
+        # joint_angles = self.get_joint_angles_dict(indices)
+        # if self.lower_limits is None or len(indices) > len(self.lower_limits):
+        #     self.update_joint_limits()
+        # for j in indices:
+        #     if joint_angles[j] < self.lower_limits[j]:
+        #         print('---Too low!')
+        #         p.resetJointState(self.body, jointIndex=j, targetValue=self.lower_limits[j], targetVelocity=0, physicsClientId=self.id)
+        #     elif joint_angles[j] > self.upper_limits[j]:
+        #         print('---Too high!')
+        #         p.resetJointState(self.body, jointIndex=j, targetValue=self.upper_limits[j], targetVelocity=0, physicsClientId=self.id)
 
     def ik(self, target_joint, target_pos, target_orient, ik_indices, max_iterations=1000, half_range=False, use_current_as_rest=False, randomize_limits=False):
         if target_orient is not None and len(target_orient) < 4:
@@ -304,7 +315,8 @@ class Agent:
         if target_orient is not None:
             ik_joint_poses = np.array(p.calculateInverseKinematics(self.body, target_joint, targetPosition=target_pos, targetOrientation=target_orient, lowerLimits=ik_lower_limits.tolist(), upperLimits=ik_upper_limits.tolist(), jointRanges=ik_joint_ranges.tolist(), restPoses=ik_rest_poses.tolist(), maxNumIterations=max_iterations, physicsClientId=self.id))
         else:
-            ik_joint_poses = np.array(p.calculateInverseKinematics(self.body, target_joint, targetPosition=target_pos, lowerLimits=ik_lower_limits.tolist(), upperLimits=ik_upper_limits.tolist(), jointRanges=ik_joint_ranges.tolist(), restPoses=ik_rest_poses.tolist(), maxNumIterations=max_iterations, physicsClientId=self.id))
+            ik_joint_poses = np.array(p.calculateInverseKinematics(self.body, target_joint, targetPosition=target_pos, restPoses=ik_rest_poses.tolist(), maxNumIterations=max_iterations, physicsClientId=self.id))
+            # ik_joint_poses = np.array(p.calculateInverseKinematics(self.body, target_joint, targetPosition=target_pos, lowerLimits=ik_lower_limits.tolist(), upperLimits=ik_upper_limits.tolist(), jointRanges=ik_joint_ranges.tolist(), restPoses=ik_rest_poses.tolist(), maxNumIterations=max_iterations, physicsClientId=self.id))
         return ik_joint_poses[ik_indices]
 
     def print_joint_info(self, show_fixed=True):

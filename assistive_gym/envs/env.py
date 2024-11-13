@@ -198,7 +198,7 @@ class AssistiveEnv(gym.Env):
             # Append the new action to the current measured joint angles
             agent_joint_angles = agent.get_joint_angles(agent.controllable_joint_indices)
             if not ik or isinstance(agent, Human):
-                continue
+                # continue
                 # Update the target robot/human joint angles based on the proposed action and joint limits
                 # below_lower_limits = agent_joint_angles + action < agent.controllable_joint_lower_limits
                 # above_upper_limits = agent_joint_angles + action > agent.controllable_joint_upper_limits
@@ -206,24 +206,38 @@ class AssistiveEnv(gym.Env):
                 # action[above_upper_limits] = 0
                 # agent_joint_angles[below_lower_limits] = agent.controllable_joint_lower_limits[below_lower_limits]
                 # agent_joint_angles[above_upper_limits] = agent.controllable_joint_upper_limits[above_upper_limits]
-                if isinstance(agent, Human):
+                if self.motion_id == 0:
+                    continue
+                start = 20 if self.horizon == 150 else 90
+                if self.iteration >= start:
+                    if self.arm_traj_idx == len(self.arm_traj) or self.arm_traj_idx < 0:
+                        continue
                     agent_joint_angles = self.arm_traj[self.arm_traj_idx]
                     curr_pos, curr_orient = self.human.get_pos_orient(18)
                     print('idx', self.arm_traj_idx, 'curr', curr_pos)
+                    # self.arm_traj_idx += 1
+
+                    if self.repeat_traj:
+                        if self.arm_traj_idx == len(self.arm_traj) - 1:
+                            self.traj_direction = -1
+                        self.arm_traj_idx += self.traj_direction
+                    else:
+                        self.arm_traj_idx += 1
                     
                     # Update the index based on the direction
-                    self.arm_traj_idx += self.traj_direction
+                    # self.arm_traj_idx += self.traj_direction
 
-                    if self.arm_traj_idx == len(self.arm_traj) - 1:
-                        self.traj_direction = -1
-                    elif self.arm_traj_idx == 0:
-                        self.traj_direction = 1
+                    # if self.arm_traj_idx == len(self.arm_traj) - 1:
+                    #     self.traj_direction = -1
+                    # elif self.arm_traj_idx == 0:
+                    #     self.traj_direction = 1
+
                     
-                    for _ in range(10):
+                    for _ in range(1):
                         agent.control(agent.controllable_joint_indices, agent_joint_angles, gains[i], forces[i])
                         curr_joint_angles = agent.get_joint_angles(agent.controllable_joint_indices)
                         err = np.linalg.norm(curr_joint_angles - agent_joint_angles)
-                        print('err', err)
+                        # print('err', err)
                         if err < 1e-4:
                             break
 
@@ -421,7 +435,7 @@ class AssistiveEnv(gym.Env):
         # get a depth image
         rgba, depth, segmentation_mask = self.get_camera_image_depth()
         image = Image.fromarray(rgba[..., :3], 'RGB')
-        image.save('./new_image_{}_{}_{}_{}_{}.png'.format(self.garment, self.elastic_stiffness, self.damping_stiffness, self.all_direction, self.bending_stiffnes))
+        image.save('sim_imgs/new_image_{}_{}_{}_{}_{}.png'.format(self.garment, self.elastic_stiffness, self.damping_stiffness, self.all_direction, self.bending_stiffnes))
         # import pdb;pdb.set_trace()
 
         rgba = rgba.reshape((-1, 4))

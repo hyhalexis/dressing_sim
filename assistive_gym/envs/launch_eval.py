@@ -4,6 +4,7 @@ import click
 import socket
 from chester.run_exp import run_experiment_lite, VariantGenerator
 from eval import run_task
+import argparse
 # from env_viewer import viewer
 
 
@@ -14,19 +15,26 @@ def get_all_eval_configs():
     # print(res)
     return res
 
-@click.command()
-@click.argument('mode', type=str, default='local')
-@click.option('--debug/--no-debug', default=True)
-@click.option('--dry/--no-dry', default=False)
-def main(mode, debug, dry):
-    # viewer('DressingSawyerHuman-v1')
+# @click.command()
+# @click.argument('mode', type=str, default='local')
+# @click.option('--debug/--no-debug', default=True)
+# @click.option('--dry/--no-dry', default=False)
+# def main(mode, debug, dry):
+def main(args):
     exp_prefix = '0930_first_exp'
 
     vg = VariantGenerator()
 
     vg.add('variant_path', ['/home/alexishao/assistive-gym-dressing/assistive-gym-fem/assistive_gym/envs/variant.json'])
-    vg.add('actor_load_name', ['/home/alexishao/assistive-gym-dressing/assistive-gym-fem/assistive_gym/envs/ckpt/actor_1900106.pt'])
-    # vg.add('actor_load_name', ['/home/alexishao/assistive-gym-dressing/assistive-gym-fem/assistive_gym/envs/ckpt/actor_best_test_600023_0.65914.pt'])
+
+    if args.policy == '1':
+        vg.add('actor_load_name', ['/home/alexishao/assistive-gym-dressing/assistive-gym-fem/assistive_gym/envs/ckpt/actor_1900106.pt'])
+        vg.add('horizon', [250])
+
+    else:
+        vg.add('actor_load_name', ['/home/alexishao/assistive-gym-dressing/assistive-gym-fem/assistive_gym/envs/ckpt/actor_best_test_600023_0.65914.pt'])
+        vg.add('horizon', [170])
+
 
     vg.add('observation_mode', ['real_partial_pc'])
     # vg.add('observation_mode', ['pointcloud_3'])
@@ -35,14 +43,19 @@ def main(mode, debug, dry):
     vg.add('frame_skip', [0])
     vg.add('eval_poses', [[i for i in range(30)]])
     vg.add('plot_gif', [True])
-    vg.add('horizon', [150])
     vg.add('plot_gradients', [False])
     vg.add('save_images', [False])
     vg.add('draw_pc', [False])
     vg.add('decompose_picker_action', [False])
     vg.add('train_reward_predictor', [False])
-    vg.add('render', [False])
-    vg.add('action_scale', [0.025])
+    if args.render:
+        vg.add('render', [True])
+
+    else:
+        vg.add('render', [False])
+    vg.add('action_scale', [0.025]) # 0.025
+    vg.add('camera_pos', [args.camera_pos])
+    vg.add('motion_id', [args.motion_id])
 
     # vg.add('randomize_cloth_observation', [False])
     # vg.add('gripper_crop_lower_y', [0])
@@ -53,7 +66,7 @@ def main(mode, debug, dry):
     # vg.add('cloth_depth_erosion', [0])
     # vg.add('cloth_depth_dilation', [0])
 
-    if not debug:
+    if not args.debug:
         pass
     else:
         exp_prefix += '_debug'
@@ -80,7 +93,7 @@ def main(mode, debug, dry):
         while len(sub_process_popens) >= 10:
             sub_process_popens = [x for x in sub_process_popens if x.poll() is None]
             time.sleep(10)
-        if mode in ['seuss', 'autobot']:
+        if args.mode in ['seuss', 'autobot']:
             if idx == 0:
                 # compile_script = 'compile.sh'  # For the first experiment, compile the current softgym
                 compile_script = None  # For the first experiment, compile the current softgym
@@ -88,7 +101,7 @@ def main(mode, debug, dry):
             else:
                 compile_script = None
                 wait_compile = 0  # Wait 30 seconds for the compilation to finish
-        elif mode == 'ec2':
+        elif args.mode == 'ec2':
             compile_script = 'compile_1.0.sh'
             wait_compile = None
         else:
@@ -101,11 +114,11 @@ def main(mode, debug, dry):
             stub_method_call=run_task,
             variants=vvs,
             # variant=vv,
-            mode=mode,
-            dry=dry,
+            mode=args.mode,
+            dry=args.dry,
             use_gpu=True,
             exp_prefix=exp_prefix,
-            wait_subprocess=debug,
+            wait_subprocess=args.debug,
             compile_script=compile_script,
             wait_compile=wait_compile,
             env=env_var,
@@ -114,9 +127,32 @@ def main(mode, debug, dry):
         )
         if cur_popen is not None:
             sub_process_popens.append(cur_popen)
-        if debug:
+        if args.debug:
             break
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser()
+    
+    parser.add_argument(
+        '--mode', type=str, default='local', 
+        choices=['local', 'seuss', 'autobot', 'ec2'], 
+    )
+    
+    parser.add_argument(
+        '--debug', action='store_true', 
+    )
+    
+    parser.add_argument(
+        '--dry', action='store_true', 
+    )
+
+    parser.add_argument('--policy', default=2, choices=['1', '2'])
+    parser.add_argument('--camera_pos', default='side', choices=['front', 'side'])
+
+    parser.add_argument('--motion_id', default=1)
+    parser.add_argument('--render', default=0)
+    
+    # Parse arguments
+    args = parser.parse_args()
+    main(args)

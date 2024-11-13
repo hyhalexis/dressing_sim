@@ -10,7 +10,8 @@ import time
 # from skimage.util.shape import view_as_windows
 from collections import deque
 import open3d as o3d
- 
+import h5py
+
 
 
 class ConvergenceChecker(object):
@@ -564,3 +565,13 @@ def rotation_matrix_to_quaternion(R):
     z = (R[1, 0] - R[0, 1]) / (4 * w)
     
     return np.array([w, x, y, z])
+
+def load_data_by_name(data_names, path):
+    hf = h5py.File(path, 'r')
+    data = {}
+    for i in range(len(data_names)):
+        d = np.array(hf.get(data_names[i]))
+        data[data_names[i]] = d
+    hf.close()
+
+    return data

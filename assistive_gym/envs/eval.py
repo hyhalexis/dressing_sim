@@ -59,7 +59,7 @@ def run_task(vv, log_dir=None, exp_name=None):
     main(vv_to_args(load_vv))   
 
 
-def evaluate(env, agent, video_dir, step, args):
+def evaluate(env, agent, video_dir, traj_dir, step, args):
     all_ep_rewards = []
     imsize = 720
 
@@ -80,6 +80,7 @@ def evaluate(env, agent, video_dir, step, args):
         episode_reward = 0
         ep_info = []
         whole_arm_ratios, upper_arm_ratios = [], []
+        actions_list = []
 
         # initial_images = env.get_image(imsize, imsize, both_camera_angle=True)
         # frames, frames_2 = [initial_images[0]], [initial_images[1]]
@@ -90,10 +91,13 @@ def evaluate(env, agent, video_dir, step, args):
         # all_images = []
         rewards = []
         distance_tool_to_human = []
+        traj_dataset = []
         
         # pos_grad_images = []
         # feature_grad_images = []
 
+        # with open('traj_data/actions26', 'rb') as f:
+        #     actions = pickle.load(f)
         t = 0
         while not done:
             with utils.eval_mode(agent):
@@ -104,7 +108,6 @@ def evaluate(env, agent, video_dir, step, args):
             # step_action[:3] *= 0.01
             x, y, z = step_action[:3].copy() * args.action_scale
             x_r, y_r, z_r = step_action[3:].copy()
-            print('before', step_action)
 
             step_action[0] = z 
             step_action[1] = x
@@ -126,7 +129,24 @@ def evaluate(env, agent, video_dir, step, args):
                 step_action[3:] *= dtheta
 
             print('action', step_action)
-            obs, reward, done, info = env.step(step_action)
+            actions_list.append(step_action)
+            # step_action = actions[t]
+            new_obs, reward, done, info = env.step(step_action)
+
+            step_data = {
+                'obs': obs,
+                'action': step_action,
+                'new_obs': new_obs,
+                'reward': reward,
+                'info': info
+            }
+
+            traj_dataset.append(step_data)
+            
+            # with open(os.path.join(traj_dir, 'transition_{}'.format(t)), 'wb') as f:
+            #     pickle.dump(step_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+            obs = new_obs
             if obs is None: # collision avoidance-skip action
                 continue
             traj_obses.append(obs)
@@ -149,6 +169,14 @@ def evaluate(env, agent, video_dir, step, args):
 
         with open(os.path.join(video_dir, '{}.pkl'.format(env.garment)), 'wb') as f:
             pickle.dump(traj_obses, f)
+
+        with open(os.path.join(traj_dir, 'transition_{}'.format(t)), 'wb') as f:
+            pickle.dump(step_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+        # with open(os.path.join(traj_dir, 'actions26'), 'wb') as f:
+        #     print('actions saved')
+        #     pickle.dump(actions_list, f, protocol=pickle.HIGHEST_PROTOCOL)
 
         # if False:
         save_numpy_as_gif(np.array(pc_images), os.path.join(video_dir, '{}.gif'.format(env.garment)))
@@ -238,8 +266,7 @@ def main(args):
         args.__dict__["seed"] = np.random.randint(1, 1000000)
     utils.set_seed_everywhere(args.seed)
 
-    env = DressingSawyerHumanEnv(render=args.render)
-    # env = normalize(env)
+    env = DressingSawyerHumanEnv(motion=args.motion_id, horizon=args.horizon, camera_pos=args.camera_pos, render=args.render)
 
     # make directory
     ts = time.gmtime()
@@ -248,6 +275,10 @@ def main(args):
     args.work_dir = logger.get_dir()
 
     video_dir = utils.make_dir(os.path.join(args.work_dir, 'video'))
+
+    traj_dir = 'traj_data'
+    if not os.path.exists(traj_dir):
+        os.mkdir(traj_dir)
 
     device = torch.device('cuda:{}'.format(args.cuda_idx) if torch.cuda.is_available() else 'cpu')
 
@@ -261,7 +292,7 @@ def main(args):
         device=device
     )
 
-    all_whole_arm_ratios, all_upper_arm_ratios = evaluate(env, agent, video_dir, 0, args)
+    all_whole_arm_ratios, all_upper_arm_ratios = evaluate(env, agent, video_dir, traj_dir, 0, args)
     np.save(osp.join(args.work_dir, 'all_upper_arm_ratios.npy'), all_upper_arm_ratios)
     np.save(osp.join(args.work_dir, 'all_whole_arm_ratios.npy'), all_whole_arm_ratios)
     
