@@ -56,6 +56,7 @@ def main(args):
     vg.add('action_scale', [0.025]) # 0.025
     vg.add('camera_pos', [args.camera_pos])
     vg.add('motion_id', [args.motion_id])
+    vg.add('garment_id', [args.garment_id])
 
     # vg.add('randomize_cloth_observation', [False])
     # vg.add('gripper_crop_lower_y', [0])
@@ -151,6 +152,7 @@ if __name__ == '__main__':
     parser.add_argument('--camera_pos', default='side', choices=['front', 'side'])
 
     parser.add_argument('--motion_id', default=1)
+    parser.add_argument('--garment_id', default=1)
     parser.add_argument('--render', default=0)
     
     # Parse arguments

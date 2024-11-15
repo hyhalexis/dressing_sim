@@ -96,7 +96,7 @@ def evaluate(env, agent, video_dir, traj_dir, step, args):
         # pos_grad_images = []
         # feature_grad_images = []
 
-        # with open('traj_data/actions26', 'rb') as f:
+        # with open('traj_data/actions26.pkl', 'rb') as f:
         #     actions = pickle.load(f)
         t = 0
         while not done:
@@ -138,12 +138,15 @@ def evaluate(env, agent, video_dir, traj_dir, step, args):
                 'action': step_action,
                 'new_obs': new_obs,
                 'reward': reward,
-                'info': info
+                'info': info,
+                'img': env.step_img,
+                'gripper_pos': env.step_gripper_pos,
+                'line_points': env.step_line_pts
             }
 
             traj_dataset.append(step_data)
             
-            # with open(os.path.join(traj_dir, 'transition_{}'.format(t)), 'wb') as f:
+            # with open(os.path.join(traj_dir, 'transition_{}.pkl'.format(t)), 'wb') as f:
             #     pickle.dump(step_data, f, protocol=pickle.HIGHEST_PROTOCOL)
 
             obs = new_obs
@@ -167,14 +170,14 @@ def evaluate(env, agent, video_dir, traj_dir, step, args):
             # all_images.append(all_image)
             t += 1
 
-        with open(os.path.join(video_dir, '{}.pkl'.format(env.garment)), 'wb') as f:
-            pickle.dump(traj_obses, f)
+        # with open(os.path.join(video_dir, '{}.pkl'.format(env.garment)), 'wb') as f:
+        #     pickle.dump(traj_obses, f)
 
-        with open(os.path.join(traj_dir, 'transition_{}'.format(t)), 'wb') as f:
-            pickle.dump(step_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+        with open(os.path.join(traj_dir, 'p{}_motion{}_{}_{}.pkl'.format(env.policy, env.motion_id, env.camera_pos, env.garment)), 'wb') as f:
+            pickle.dump(traj_dataset, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 
-        # with open(os.path.join(traj_dir, 'actions26'), 'wb') as f:
+        # with open(os.path.join(traj_dir, 'actions26.pkl'), 'wb') as f:
         #     print('actions saved')
         #     pickle.dump(actions_list, f, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -266,7 +269,7 @@ def main(args):
         args.__dict__["seed"] = np.random.randint(1, 1000000)
     utils.set_seed_everywhere(args.seed)
 
-    env = DressingSawyerHumanEnv(motion=args.motion_id, horizon=args.horizon, camera_pos=args.camera_pos, render=args.render)
+    env = DressingSawyerHumanEnv(motion=args.motion_id, garment=args.garment_id, horizon=args.horizon, camera_pos=args.camera_pos, render=args.render)
 
     # make directory
     ts = time.gmtime()

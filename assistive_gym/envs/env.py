@@ -208,7 +208,7 @@ class AssistiveEnv(gym.Env):
                 # agent_joint_angles[above_upper_limits] = agent.controllable_joint_upper_limits[above_upper_limits]
                 if self.motion_id == 0:
                     continue
-                start = 20 if self.horizon == 150 else 90
+                start = 15 if self.policy == 2 else 25
                 if self.iteration >= start:
                     if self.arm_traj_idx == len(self.arm_traj) or self.arm_traj_idx < 0:
                         continue
@@ -434,6 +434,7 @@ class AssistiveEnv(gym.Env):
 
         # get a depth image
         rgba, depth, segmentation_mask = self.get_camera_image_depth()
+        self.step_img = rgba[..., :3]
         image = Image.fromarray(rgba[..., :3], 'RGB')
         image.save('sim_imgs/new_image_{}_{}_{}_{}_{}.png'.format(self.garment, self.elastic_stiffness, self.damping_stiffness, self.all_direction, self.bending_stiffnes))
         # import pdb;pdb.set_trace()

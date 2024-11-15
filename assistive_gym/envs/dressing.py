@@ -16,7 +16,7 @@ import scipy
 import pickle
 
 class DressingEnv(AssistiveEnv):
-    def __init__(self, robot, human, use_ik=True, horizon=150, motion=1, camera_pos = 'side', render=False):
+    def __init__(self, robot, human, use_ik=True, horizon=150, motion=1, garment=1, camera_pos = 'side', render=False):
         super(DressingEnv, self).__init__(robot=robot, human=human, task='dressing', obs_robot_len=(16 + len(robot.controllable_joint_indices) - (len(robot.wheel_joint_indices) if robot.mobile else 0)), obs_human_len=(16 + (len(human.controllable_joint_indices) if human is not None else 0)), frame_skip=1, time_step=0.02, deformable=True, render=render)
         self.use_ik = use_ik
         self.use_mesh = (human is None)
@@ -25,6 +25,7 @@ class DressingEnv(AssistiveEnv):
         self.traj_direction = 1
         self.repeat_traj = 0
         self.motion_id = int(motion)
+        self.garment_id = int(garment)
         self.verbose = False
         self.horizon = horizon
         self.policy = 1 if horizon==250 else 2
@@ -53,10 +54,14 @@ class DressingEnv(AssistiveEnv):
         self.all_direction = 0
         self.useNeoHookean = 1
 
+        self.step_img = None
+        self.step_gripper_pos = None
+        self.step_line_pts = []
+
         # self.arm_points = np.zeros((1,3))
         # self.collision_kd_tree = scipy.spatial.KDTree(self.arm_points)
 
-        self.line1_extend_factor = 0.05
+        self.line1_extend_factor = 0.1
 
         self.images = []
         self.pc_images = []
@@ -131,7 +136,7 @@ class DressingEnv(AssistiveEnv):
         upper_arm_distances = []
         intersection_points = []
         for triangle_idx in self.reward_triangle_idxes:
-            intersect_line2, intersect_point2 = line_intersecting_triangle(line2_ori, line2_dir, 
+            intersect_line2, intersect_point2 = line_intersecting_triangle(line2_ori - line2_dir * 0.05, line2_dir, 
                 mesh_points[triangle_idx[0]], mesh_points[triangle_idx[1]], mesh_points[triangle_idx[2]])
             if intersect_line2:
                 vec2 = intersect_point2 - line1_ori
@@ -331,12 +336,14 @@ class DressingEnv(AssistiveEnv):
         self.line1_ori, self.line2_ori = line_points[1], line_points[2] # elbow, shoulder
         self.line1_dir, self.line2_dir = line1 / np.linalg.norm(line1), line2 / np.linalg.norm(line2)
         self.line_points = line_points
+
+        self.step_gripper_pos = end_effector_pos
+        self.step_line_pts = line_points
         
-        
-        if self.camera_pos == 'front':
-            self.setup_camera_rpy(camera_target=[-0.31471434, -0.2672464, 1.00759685], distance=0.7, rpy=[0, -25, 0], fov=60, camera_width=1080, camera_height=720)
-        elif self.camera_pos == 'side':
-            self.setup_camera_rpy(camera_target=[-0.01471434, -0.5672464, 1.00759685], distance=1.0, rpy=[0, -20, 15], fov=60, camera_width=1080, camera_height=720)
+        # if self.camera_pos == 'front':
+        #     self.setup_camera_rpy(camera_target=[-0.31471434, -0.2672464, 1.00759685], distance=0.7, rpy=[0, -25, 0], fov=60, camera_width=1080, camera_height=720)
+        # elif self.camera_pos == 'side':
+        #     self.setup_camera_rpy(camera_target=[-0.01471434, -0.5672464, 1.00759685], distance=1.0, rpy=[0, -20, 15], fov=60, camera_width=1080, camera_height=720)
 
         # self.setup_camera_rpy(camera_target=[-0.01471434, -0.5672464, 1.00759685], distance=1.0, rpy=[0, -25, 0], fov=60, camera_width=1080, camera_height=720)
         
@@ -536,7 +543,7 @@ class DressingEnv(AssistiveEnv):
         self.human.motor_forces = 100.0
 
         self.robot.motor_gains = 0.05 # 0.1
-        self.robot.motor_forces = 100.0
+        self.robot.motor_forces = 100.
 
         if self.use_mesh:
             self.human = HumanMesh()
@@ -554,6 +561,12 @@ class DressingEnv(AssistiveEnv):
             self.human.set_joint_angles([j for j, _ in joints_positions], [np.deg2rad(j_angle) for _, j_angle in joints_positions])
             # self.human.target_joint_angles = self.human.get_joint_angles(self.human.controllable_joint_indices)
             self.human.control(self.human.all_joint_indices, self.human.get_joint_angles(), 0.05, 100)
+
+        if self.camera_pos == 'front':
+            self.setup_camera_rpy(camera_target=[-0.31471434, -0.2672464, 1.00759685], distance=0.7, rpy=[0, -25, 0], fov=60, camera_width=1080, camera_height=720)
+        elif self.camera_pos == 'side':
+            self.setup_camera_rpy(camera_target=[-0.01471434, -0.5672464, 1.00759685], distance=1.0, rpy=[0, -20, 15], fov=60, camera_width=1080, camera_height=720)
+
 
         # if self.human.controllable or self.human.impairment == 'tremor':
         #     self.human.control(self.human.controllable_joint_indices, self.human.get_joint_angles(self.human.controllable_joint_indices), 0.05, 1)
@@ -612,7 +625,7 @@ class DressingEnv(AssistiveEnv):
         # print(self.robot.get_pos_orient(self.robot.left_end_effector, False, True)[0])
 
         garments = ["hospital_gown", "tshirt_26", "tshirt_68", "tshirt_4", "tshirt_392"]
-        garment_idx = 1
+        garment_idx = self.garment_id #1
         garment = garments[garment_idx]
         self.garment = garment
         path_to_garment = os.path.join(self.directory, 'data/cloth3d/train/Tshirt', '{}.obj'.format(garment))
@@ -644,7 +657,7 @@ class DressingEnv(AssistiveEnv):
         
         # self.cloth = p.loadSoftBody(path_to_garment, scale=cloth_scales[garment], mass=0.16, useNeoHookean=0, useBendingSprings=1, useMassSpring=1, springElasticStiffness=10, springDampingStiffness=0.1, springDampingAllDirections=0, springBendingStiffness=0.1, useSelfCollision=1, collisionMargin=0.001, frictionCoeff=0.5, useFaceContact=1, physicsClientId=self.id)
         # p.clothParams(self.cloth, kLST=0.055, kAST=1.0, kVST=0.5, kDP=0.01, kDG=10, kDF=0.39, kCHR=1.0, kKHR=1.0, kAHR=1.0, piterations=5, physicsClientId=self.id)
-        self.cloth = p.loadSoftBody(path_to_garment, scale=cloth_scales[garment]*0.8, mass=0.16, useNeoHookean=self.useNeoHookean, useBendingSprings=1, useMassSpring=1, springElasticStiffness=self.elastic_stiffness, springDampingStiffness=self.damping_stiffness, springDampingAllDirections=self.all_direction, springBendingStiffness=self.bending_stiffnes, useSelfCollision=1, collisionMargin=0.001, frictionCoeff=0.1, useFaceContact=1, physicsClientId=self.id)
+        self.cloth = p.loadSoftBody(path_to_garment, scale=cloth_scales[garment]*0.8, mass=0.16, useNeoHookean=self.useNeoHookean, useBendingSprings=1, useMassSpring=1, springElasticStiffness=self.elastic_stiffness, springDampingStiffness=self.damping_stiffness, springDampingAllDirections=self.all_direction, springBendingStiffness=self.bending_stiffnes, useSelfCollision=1, collisionMargin=0.005, frictionCoeff=0.1, useFaceContact=1, physicsClientId=self.id)
         p.changeVisualShape(self.cloth, -1, rgbaColor=[1, 1, 1, 1], flags=0, physicsClientId=self.id)
         p.changeVisualShape(self.cloth, -1, flags=p.VISUAL_SHAPE_DOUBLE_SIDED, physicsClientId=self.id)
         p.setPhysicsEngineParameter(numSubSteps=8, physicsClientId=self.id)
@@ -662,14 +675,23 @@ class DressingEnv(AssistiveEnv):
         # self.triangle4_point_indices = polygon_triangle_indices[garment][3]
 
         # Move cloth grasping vertex into robot end effector
-        p.resetBasePositionAndOrientation(self.cloth, [0, 0, 0], self.get_quaternion([0, 0, np.pi/2]), physicsClientId=self.id)
+        if self.garment_id != 0:
+            p.resetBasePositionAndOrientation(self.cloth, [0, 0, 0], self.get_quaternion([0, 0, np.pi/2]), physicsClientId=self.id)
+        else:
+            p.resetBasePositionAndOrientation(self.cloth, [0, 0, 0], self.get_quaternion([0, 0, np.pi]), physicsClientId=self.id)
+
         data = p.getMeshData(self.cloth, -1, flags=p.MESH_DATA_SIMULATION_MESH, physicsClientId=self.id)
         # data2 = p.getMeshData(self.cloth2, -1, flags=p.MESH_DATA_SIMULATION_MESH, physicsClientId=self.id)
         vertex_position = np.array(data[1][vertex_index])
         # vertex_position = np.array(data2[1][202])
 
         offset = self.robot.get_pos_orient(self.robot.left_end_effector)[0] - vertex_position
-        p.resetBasePositionAndOrientation(self.cloth, offset, self.get_quaternion([0, 0, np.pi/2]), physicsClientId=self.id)
+        
+        if self.garment_id != 0:
+            p.resetBasePositionAndOrientation(self.cloth, offset, self.get_quaternion([0, 0, np.pi/2]), physicsClientId=self.id)
+        else:
+            p.resetBasePositionAndOrientation(self.cloth, offset, self.get_quaternion([0, 0, np.pi]), physicsClientId=self.id)
+
         data = p.getMeshData(self.cloth, -1, flags=p.MESH_DATA_SIMULATION_MESH, physicsClientId=self.id)
         # data2 = p.getMeshData(self.cloth2, -1, flags=p.MESH_DATA_SIMULATION_MESH, physicsClientId=self.id)
 
@@ -825,13 +847,11 @@ class DressingEnv(AssistiveEnv):
                     joint_angles = self.human.get_joint_angles(ik_indices)
                     print('diff', np.linalg.norm(joint_angles-target_joint_angles))
 
-                
                 joint_angles = self.human.get_joint_angles(ik_indices)
                 print('diff', np.linalg.norm(joint_angles-target_joint_angles))
 
                 with open('arm_motions/arm_motion_{}.pkl'.format(self.motion_id), 'wb') as f:
                     pickle.dump(joint_angles, f)
-
 
         elif self.motion_id == 2:
             target_pos = curr_pos + np.array([0, 0, -0.3])
