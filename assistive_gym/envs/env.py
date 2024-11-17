@@ -210,7 +210,7 @@ class AssistiveEnv(gym.Env):
                     continue
                 
                 if self.garment_id == 1:
-                    start = 15 if self.policy == 2 else 25
+                    start = 15 if self.policy == 2 else 30
                 elif self.garment_id == 2:
                     start = 20 if self.policy == 2 else 30
 

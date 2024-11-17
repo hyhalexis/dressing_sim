@@ -58,6 +58,7 @@ def main(args):
     vg.add('motion_id', [args.motion_id])
     vg.add('garment_id', [args.garment_id])
     vg.add('policy', [args.policy])
+    vg.add('rand', [args.rand])
 
     # vg.add('randomize_cloth_observation', [False])
     # vg.add('gripper_crop_lower_y', [0])
@@ -155,6 +156,7 @@ if __name__ == '__main__':
     parser.add_argument('--motion_id', default=1)
     parser.add_argument('--garment_id', default=1)
     parser.add_argument('--render', default=0)
+    parser.add_argument('--rand', default=0)
     
     # Parse arguments
     args = parser.parse_args()

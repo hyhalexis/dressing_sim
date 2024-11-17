@@ -16,7 +16,7 @@ import scipy
 import pickle
 
 class DressingEnv(AssistiveEnv):
-    def __init__(self, robot, human, use_ik=True, policy=2, horizon=150, motion=1, garment=1, camera_pos = 'side', render=False):
+    def __init__(self, robot, human, use_ik=True, policy=2, horizon=150, motion=1, garment=1, camera_pos = 'side', rand=False, render=False):
         super(DressingEnv, self).__init__(robot=robot, human=human, task='dressing', obs_robot_len=(16 + len(robot.controllable_joint_indices) - (len(robot.wheel_joint_indices) if robot.mobile else 0)), obs_human_len=(16 + (len(human.controllable_joint_indices) if human is not None else 0)), frame_skip=1, time_step=0.02, deformable=True, render=render)
         self.use_ik = use_ik
         self.use_mesh = (human is None)
@@ -30,6 +30,7 @@ class DressingEnv(AssistiveEnv):
         self.horizon = horizon
         self.policy = int(policy)
         self.camera_pos = camera_pos
+        self.rand = int(rand)
 
         self.upper_w = 5
         self.task_w = 1
@@ -279,7 +280,7 @@ class DressingEnv(AssistiveEnv):
         reward = self.compute_reward()
         done = self.iteration >= self.horizon
         if done:
-            imageio.mimsave('traj_gifs/p{}_motion{}_{}_{}_{}_{}_{}_{}_{}_{}_{}.gif'.format(self.policy, self.motion_id, self.camera_pos, self.garment, self.elastic_stiffness, self.damping_stiffness, self.all_direction, self.bending_stiffnes, self.horizon, self.useNeoHookean, self.upperarm_distance / self.upper_arm_length), self.images, format='GIF', duration=30)
+            imageio.mimsave('traj_gifs/p{}_motion{}_{}_{}_{}_{}_{}_{}_{}_{}_rand{}_s{}_e{}_{}.gif'.format(self.policy, self.motion_id, self.camera_pos, self.garment, self.elastic_stiffness, self.damping_stiffness, self.all_direction, self.bending_stiffnes, self.horizon, self.useNeoHookean, self.rand, int(self.shoulder_rand), int(self.elbow_rand), self.upperarm_distance / self.upper_arm_length), self.images, format='GIF', duration=30)
             # imageio.mimsave('simulation_pc.gif', self.pc_images, format='GIF', duration=30)
 
         info = self._get_info()
@@ -555,9 +556,11 @@ class DressingEnv(AssistiveEnv):
             chair_seat_position = np.array([0, 0.1, 0.55])
             self.human.set_base_pos_orient(chair_seat_position - self.human.get_vertex_positions(self.human.bottom_index), [0, 0, 0, 1])
         else:
-            shoulder_rand = np.random.uniform(-5, 5)
-            elbow_rand = np.random.uniform(-5, 5)
-            joints_positions = [(self.human.j_right_elbow, -90+elbow_rand), (self.human.j_right_shoulder_x, 80+shoulder_rand), (self.human.j_left_elbow, -90), (self.human.j_right_hip_x, -90), (self.human.j_right_knee, 80), (self.human.j_left_hip_x, -90), (self.human.j_left_knee, 80)]
+            rng = np.random.default_rng()
+            self.elbow_rand = -90 + rng.uniform(-10, 10)
+            self.shoulder_rand = 80 + rng.uniform(-5, 5)
+            print(self.elbow_rand, self.shoulder_rand)
+            joints_positions = [(self.human.j_right_elbow, self.elbow_rand), (self.human.j_right_shoulder_x, self.shoulder_rand), (self.human.j_left_elbow, -90), (self.human.j_right_hip_x, -90), (self.human.j_right_knee, 80), (self.human.j_left_hip_x, -90), (self.human.j_left_knee, 80)]
             # self.human.setup_joints(joints_positions, use_static_joints=True, reactive_force=1, reactive_gain=0.01)
 
             self.human.set_joint_angles([j for j, _ in joints_positions], [np.deg2rad(j_angle) for _, j_angle in joints_positions])
