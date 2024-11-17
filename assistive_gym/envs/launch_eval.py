@@ -57,6 +57,7 @@ def main(args):
     vg.add('camera_pos', [args.camera_pos])
     vg.add('motion_id', [args.motion_id])
     vg.add('garment_id', [args.garment_id])
+    vg.add('policy', [args.policy])
 
     # vg.add('randomize_cloth_observation', [False])
     # vg.add('gripper_crop_lower_y', [0])

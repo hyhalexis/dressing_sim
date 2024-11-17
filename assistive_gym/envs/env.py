@@ -208,7 +208,12 @@ class AssistiveEnv(gym.Env):
                 # agent_joint_angles[above_upper_limits] = agent.controllable_joint_upper_limits[above_upper_limits]
                 if self.motion_id == 0:
                     continue
-                start = 15 if self.policy == 2 else 25
+                
+                if self.garment_id == 1:
+                    start = 15 if self.policy == 2 else 25
+                elif self.garment_id == 2:
+                    start = 20 if self.policy == 2 else 30
+
                 if self.iteration >= start:
                     if self.arm_traj_idx == len(self.arm_traj) or self.arm_traj_idx < 0:
                         continue

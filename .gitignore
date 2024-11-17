@@ -112,3 +112,19 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+# vis
+*.png
+*.gif
+*.ogv
+*.ply
+*.pkl
+
+# data
+assistive_gym/envs/data
+assistive_gym/envs/ckpt
+assistive_gym/envs/traj_data
+assistive_gym/envs/traj_gifs
+assistive_gym/envs/sim_gifs
+assistive_gym/envs/sim_imgs
+assistive_gym/envs/assets/data

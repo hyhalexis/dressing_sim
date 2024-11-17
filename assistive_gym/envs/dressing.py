@@ -16,7 +16,7 @@ import scipy
 import pickle
 
 class DressingEnv(AssistiveEnv):
-    def __init__(self, robot, human, use_ik=True, horizon=150, motion=1, garment=1, camera_pos = 'side', render=False):
+    def __init__(self, robot, human, use_ik=True, policy=2, horizon=150, motion=1, garment=1, camera_pos = 'side', render=False):
         super(DressingEnv, self).__init__(robot=robot, human=human, task='dressing', obs_robot_len=(16 + len(robot.controllable_joint_indices) - (len(robot.wheel_joint_indices) if robot.mobile else 0)), obs_human_len=(16 + (len(human.controllable_joint_indices) if human is not None else 0)), frame_skip=1, time_step=0.02, deformable=True, render=render)
         self.use_ik = use_ik
         self.use_mesh = (human is None)
@@ -28,7 +28,7 @@ class DressingEnv(AssistiveEnv):
         self.garment_id = int(garment)
         self.verbose = False
         self.horizon = horizon
-        self.policy = 1 if horizon==250 else 2
+        self.policy = int(policy)
         self.camera_pos = camera_pos
 
         self.upper_w = 5
@@ -48,9 +48,9 @@ class DressingEnv(AssistiveEnv):
         self.center_align_reward_w = 0.05
         self.center_align_penalty_w = 0.02
 
-        self.elastic_stiffness = 0.5
+        self.elastic_stiffness = 0.5  #0.5
         self.damping_stiffness = 0.01
-        self.bending_stiffnes = 0.1
+        self.bending_stiffnes = 0.1 #0.1
         self.all_direction = 0
         self.useNeoHookean = 1
 
@@ -279,7 +279,7 @@ class DressingEnv(AssistiveEnv):
         reward = self.compute_reward()
         done = self.iteration >= self.horizon
         if done:
-            imageio.mimsave('sim_gifs/p{}_motion{}_{}_{}_{}_{}_{}_{}_{}_{}.gif'.format(self.policy, self.motion_id, self.camera_pos, self.garment, self.elastic_stiffness, self.damping_stiffness, self.all_direction, self.bending_stiffnes, self.horizon, self.useNeoHookean), self.images, format='GIF', duration=30)
+            imageio.mimsave('traj_gifs/p{}_motion{}_{}_{}_{}_{}_{}_{}_{}_{}_{}.gif'.format(self.policy, self.motion_id, self.camera_pos, self.garment, self.elastic_stiffness, self.damping_stiffness, self.all_direction, self.bending_stiffnes, self.horizon, self.useNeoHookean, self.upperarm_distance / self.upper_arm_length), self.images, format='GIF', duration=30)
             # imageio.mimsave('simulation_pc.gif', self.pc_images, format='GIF', duration=30)
 
         info = self._get_info()
@@ -555,7 +555,9 @@ class DressingEnv(AssistiveEnv):
             chair_seat_position = np.array([0, 0.1, 0.55])
             self.human.set_base_pos_orient(chair_seat_position - self.human.get_vertex_positions(self.human.bottom_index), [0, 0, 0, 1])
         else:
-            joints_positions = [(self.human.j_right_elbow, -90), (self.human.j_right_shoulder_x, 80), (self.human.j_left_elbow, -90), (self.human.j_right_hip_x, -90), (self.human.j_right_knee, 80), (self.human.j_left_hip_x, -90), (self.human.j_left_knee, 80)]
+            shoulder_rand = np.random.uniform(-5, 5)
+            elbow_rand = np.random.uniform(-5, 5)
+            joints_positions = [(self.human.j_right_elbow, -90+elbow_rand), (self.human.j_right_shoulder_x, 80+shoulder_rand), (self.human.j_left_elbow, -90), (self.human.j_right_hip_x, -90), (self.human.j_right_knee, 80), (self.human.j_left_hip_x, -90), (self.human.j_left_knee, 80)]
             # self.human.setup_joints(joints_positions, use_static_joints=True, reactive_force=1, reactive_gain=0.01)
 
             self.human.set_joint_angles([j for j, _ in joints_positions], [np.deg2rad(j_angle) for _, j_angle in joints_positions])
@@ -575,7 +577,7 @@ class DressingEnv(AssistiveEnv):
         elbow_pos = self.human.get_pos_orient(self.human.j_right_elbow)[0]
         wrist_pos = self.human.get_pos_orient(self.human.right_hand)[0]
 
-        line_points = [wrist_pos+[0, -self.human.hand_radius, 0], elbow_pos, shoulder_pos]
+        line_points = [wrist_pos+[self.human.hand_radius, -self.human.hand_radius, 0], elbow_pos+[self.human.hand_radius, -self.human.hand_radius, 0], shoulder_pos+[0, -self.human.hand_radius, 0]]
         line1 = line_points[0] - line_points[1] # from elbow to finger
         line2 = line_points[1] - line_points[2] # from shoulder to elbow
         p.addUserDebugLine(line_points[0], line_points[1], lineColorRGB=[1, 0, 0], lifeTime=2.0)  # Red line
@@ -604,19 +606,33 @@ class DressingEnv(AssistiveEnv):
         # print(hand_pos_robot)
         # joint_angles = self.robot.ik(self.robot.left_end_effector, hand_pos_robot, None, self.robot.left_arm_ik_indices, max_iterations=1000, use_current_as_rest=False)
         
-        hand_pos, hand_ori = self.human.get_pos_orient(18, False, convert_to_realworld=True)
-        hand_pos[0] += 0.09
-        hand_pos[1] -= 1.3
-        hand_pos[2] += 0.925
+        # hand_pos, hand_ori = self.human.get_pos_orient(18, False, convert_to_realworld=True)
+        hand_pos, hand_ori = self.human.get_pos_orient(18)
+        
+        hand_pos[1] -= 0.57
+        hand_pos[2] += 0.11
+
+        # self.create_sphere(radius=0.1, mass=0.0, pos=hand_pos, visual=True, collision=False, rgba=[1, 0, 0, 0.5], maximal_coordinates=False, return_collision_visual=False)
+
+        # self.create_sphere(radius=0.1, mass=0.0, pos=hand_pos2, visual=True, collision=False, rgba=[0, 1, 1, 0.5], maximal_coordinates=False, return_collision_visual=False)
+
+        # hand_pos[0] += 0.09
+        # hand_pos[1] -= 1.3
+        # hand_pos[2] += 0.925
 
         # hand_pos_robot, hand_ori_robot = self.robot.convert_to_base_frame(hand_pos, hand_ori)
         hand_euler = self.robot.get_euler([0., 0., 0., 1.])
         hand_euler[1] += np.pi
-        joint_angles = self.robot.ik(self.robot.right_end_effector, hand_pos, hand_euler, self.robot.right_arm_ik_indices, max_iterations=1000, use_current_as_rest=False)
 
         self.robot.reset_joints()
         self.robot.set_base_pos_orient(base_pos, base_orient)
-        self.robot.set_joint_angles(self.robot.controllable_joint_indices, joint_angles)
+        # joint_angles = self.robot.ik(self.robot.right_end_effector, hand_pos, hand_euler, self.robot.right_arm_ik_indices, max_iterations=1000, use_current_as_rest=True)
+
+
+        for _ in range(5):
+            joint_angles = self.robot.ik(self.robot.right_end_effector, hand_pos, hand_euler, self.robot.right_arm_ik_indices, max_iterations=1000, use_current_as_rest=True)
+            self.robot.set_joint_angles(self.robot.controllable_joint_indices, joint_angles)
+            p.stepSimulation(physicsClientId=self.id)
         
         # joint_angles = [-1.64317203, -0.95115511, -1.96771027, -0.77079951, 0.28547459, -0.6480673, -1.58786233]
         # self.robot.reset_joints()
@@ -657,7 +673,7 @@ class DressingEnv(AssistiveEnv):
         
         # self.cloth = p.loadSoftBody(path_to_garment, scale=cloth_scales[garment], mass=0.16, useNeoHookean=0, useBendingSprings=1, useMassSpring=1, springElasticStiffness=10, springDampingStiffness=0.1, springDampingAllDirections=0, springBendingStiffness=0.1, useSelfCollision=1, collisionMargin=0.001, frictionCoeff=0.5, useFaceContact=1, physicsClientId=self.id)
         # p.clothParams(self.cloth, kLST=0.055, kAST=1.0, kVST=0.5, kDP=0.01, kDG=10, kDF=0.39, kCHR=1.0, kKHR=1.0, kAHR=1.0, piterations=5, physicsClientId=self.id)
-        self.cloth = p.loadSoftBody(path_to_garment, scale=cloth_scales[garment]*0.8, mass=0.16, useNeoHookean=self.useNeoHookean, useBendingSprings=1, useMassSpring=1, springElasticStiffness=self.elastic_stiffness, springDampingStiffness=self.damping_stiffness, springDampingAllDirections=self.all_direction, springBendingStiffness=self.bending_stiffnes, useSelfCollision=1, collisionMargin=0.005, frictionCoeff=0.1, useFaceContact=1, physicsClientId=self.id)
+        self.cloth = p.loadSoftBody(path_to_garment, scale=cloth_scales[garment]*0.8, mass=0.16, useNeoHookean=self.useNeoHookean, useBendingSprings=1, useMassSpring=1, springElasticStiffness=self.elastic_stiffness, springDampingStiffness=self.damping_stiffness, springDampingAllDirections=self.all_direction, springBendingStiffness=self.bending_stiffnes, useSelfCollision=1, collisionMargin=0.001, frictionCoeff=0.1, useFaceContact=1, physicsClientId=self.id)
         p.changeVisualShape(self.cloth, -1, rgbaColor=[1, 1, 1, 1], flags=0, physicsClientId=self.id)
         p.changeVisualShape(self.cloth, -1, flags=p.VISUAL_SHAPE_DOUBLE_SIDED, physicsClientId=self.id)
         p.setPhysicsEngineParameter(numSubSteps=8, physicsClientId=self.id)

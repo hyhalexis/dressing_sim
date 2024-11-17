@@ -173,7 +173,7 @@ def evaluate(env, agent, video_dir, traj_dir, step, args):
         # with open(os.path.join(video_dir, '{}.pkl'.format(env.garment)), 'wb') as f:
         #     pickle.dump(traj_obses, f)
 
-        with open(os.path.join(traj_dir, 'p{}_motion{}_{}_{}.pkl'.format(env.policy, env.motion_id, env.camera_pos, env.garment)), 'wb') as f:
+        with open(os.path.join(traj_dir, 'p{}_motion{}_{}_{}_{}.pkl'.format(env.policy, env.motion_id, env.camera_pos, env.garment, np.max(upper_arm_ratios))), 'wb') as f:
             pickle.dump(traj_dataset, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 
@@ -269,7 +269,7 @@ def main(args):
         args.__dict__["seed"] = np.random.randint(1, 1000000)
     utils.set_seed_everywhere(args.seed)
 
-    env = DressingSawyerHumanEnv(motion=args.motion_id, garment=args.garment_id, horizon=args.horizon, camera_pos=args.camera_pos, render=args.render)
+    env = DressingSawyerHumanEnv(policy=args.policy, motion=args.motion_id, garment=args.garment_id, horizon=args.horizon, camera_pos=args.camera_pos, render=args.render)
 
     # make directory
     ts = time.gmtime()
