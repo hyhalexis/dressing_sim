@@ -25,14 +25,14 @@ def main(args):
 
     vg = VariantGenerator()
 
-    vg.add('variant_path', ['/home/alexishao/assistive-gym-dressing/assistive-gym-fem/assistive_gym/envs/variant.json'])
+    vg.add('variant_path', ['/home/alexis/assistive-gym-fem/assistive_gym/envs/variant.json'])
 
     if args.policy == '1':
-        vg.add('actor_load_name', ['/home/alexishao/assistive-gym-dressing/assistive-gym-fem/assistive_gym/envs/ckpt/actor_1900106.pt'])
+        vg.add('actor_load_name', ['/home/alexis/assistive-gym-fem/assistive_gym/envs/ckpt/actor_1900106.pt'])
         vg.add('horizon', [250])
 
     else:
-        vg.add('actor_load_name', ['/home/alexishao/assistive-gym-dressing/assistive-gym-fem/assistive_gym/envs/ckpt/actor_best_test_600023_0.65914.pt'])
+        vg.add('actor_load_name', ['/home/alexis/assistive-gym-fem/assistive_gym/envs/ckpt/actor_best_test_600023_0.65914.pt'])
         vg.add('horizon', [170])
 
 

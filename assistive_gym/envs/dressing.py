@@ -16,7 +16,8 @@ import scipy
 import pickle
 
 class DressingEnv(AssistiveEnv):
-    def __init__(self, robot, human, use_ik=True, policy=2, horizon=150, motion=1, garment=1, camera_pos = 'side', rand=False, render=False):
+    def __init__(self, robot, human, use_ik=True, policy=2, horizon=150, camera_pos = 'side', rand=False, render=False):
+    # def __init__(self, robot, human, use_ik=True, policy=2, horizon=150, motion=1, garment=1, camera_pos = 'side', rand=False, render=False):
         super(DressingEnv, self).__init__(robot=robot, human=human, task='dressing', obs_robot_len=(16 + len(robot.controllable_joint_indices) - (len(robot.wheel_joint_indices) if robot.mobile else 0)), obs_human_len=(16 + (len(human.controllable_joint_indices) if human is not None else 0)), frame_skip=1, time_step=0.02, deformable=True, render=render)
         self.use_ik = use_ik
         self.use_mesh = (human is None)
@@ -24,8 +25,8 @@ class DressingEnv(AssistiveEnv):
         self.arm_traj = None
         self.traj_direction = 1
         self.repeat_traj = 0
-        self.motion_id = int(motion)
-        self.garment_id = int(garment)
+        # self.motion_id = int(motion)
+        # self.garment_id = int(garment)
         self.verbose = False
         self.horizon = horizon
         self.policy = int(policy)
@@ -280,7 +281,7 @@ class DressingEnv(AssistiveEnv):
         reward = self.compute_reward()
         done = self.iteration >= self.horizon
         if done:
-            imageio.mimsave('traj_gifs/p{}_motion{}_{}_{}_{}_{}_{}_{}_{}_{}_rand{}_s{}_e{}_{}.gif'.format(self.policy, self.motion_id, self.camera_pos, self.garment, self.elastic_stiffness, self.damping_stiffness, self.all_direction, self.bending_stiffnes, self.horizon, self.useNeoHookean, self.rand, int(self.shoulder_rand), int(self.elbow_rand), self.upperarm_distance / self.upper_arm_length), self.images, format='GIF', duration=30)
+            imageio.mimsave('/scratch/alexis/data/iql_training_1124/p{}_motion{}_{}_{}_{}_{}_{}_{}_{}_{}_rand{}_s{}_e{}_{}_{}.gif'.format(self.policy, self.motion_id, self.camera_pos, self.garment, self.elastic_stiffness, self.damping_stiffness, self.all_direction, self.bending_stiffnes, self.horizon, self.useNeoHookean, self.rand, int(self.shoulder_rand), int(self.elbow_rand), (self.upperarm_distance + self.forearm_distance) / (self.upper_arm_length + self.forearm_length), self.upperarm_distance / self.upper_arm_length), self.images, format='GIF', duration=30)
             # imageio.mimsave('simulation_pc.gif', self.pc_images, format='GIF', duration=30)
 
         info = self._get_info()
@@ -309,7 +310,7 @@ class DressingEnv(AssistiveEnv):
         ret_dict['reward'] = self.reward
         return ret_dict
 
-    def _get_obs(self, agent=None):
+    def _get_obs(self):
         end_effector_pos, end_effector_orient = self.robot.get_pos_orient(self.robot.left_end_effector)
         robot_joint_angles = self.robot.get_joint_angles(self.robot.controllable_joint_indices)
         # Fix joint angles to be in [-pi, pi]
@@ -325,8 +326,9 @@ class DressingEnv(AssistiveEnv):
         self.total_force_on_human = self.robot_force_on_human + self.cloth_force_sum
         self.closest_dist = min(self.robot.get_closest_points(self.human, 0.02)[-1]) if self.robot.get_closest_points(self.human, 0.02)[-1] else None
 
-
         line_points = [wrist_pos+[0, -self.human.hand_radius, 0], elbow_pos, shoulder_pos]
+        # line_points = [wrist_pos+[self.human.hand_radius, -self.human.hand_radius, 0], elbow_pos+[self.human.hand_radius, -self.human.hand_radius, 0], shoulder_pos+[0, -self.human.hand_radius, 0]]
+
         line1 = line_points[0] - line_points[1] # from elbow to finger
         line2 = line_points[1] - line_points[2] # from shoulder to elbow
         p.addUserDebugLine(line_points[0], line_points[1], lineColorRGB=[1, 0, 0], lifeTime=2.0)  # Red line
@@ -531,8 +533,10 @@ class DressingEnv(AssistiveEnv):
             # plt.show()
         return data
 
-    def reset(self):
+    def reset(self, garment_id=1, motion_id=0):
         super(DressingEnv, self).reset()
+        self.garment_id = int(garment_id)
+        self.motion_id = int(motion_id)
         self.build_assistive_env('wheelchair_left', gender='female', human_impairment='none')
         if self.robot.wheelchair_mounted:
             wheelchair_pos, wheelchair_orient = self.furniture.get_base_pos_orient()
@@ -580,7 +584,8 @@ class DressingEnv(AssistiveEnv):
         elbow_pos = self.human.get_pos_orient(self.human.j_right_elbow)[0]
         wrist_pos = self.human.get_pos_orient(self.human.right_hand)[0]
 
-        line_points = [wrist_pos+[self.human.hand_radius, -self.human.hand_radius, 0], elbow_pos+[self.human.hand_radius, -self.human.hand_radius, 0], shoulder_pos+[0, -self.human.hand_radius, 0]]
+        line_points = [wrist_pos+[0, -self.human.hand_radius, 0], elbow_pos, shoulder_pos]
+        # line_points = [wrist_pos+[self.human.hand_radius, -self.human.hand_radius, 0], elbow_pos+[self.human.hand_radius, -self.human.hand_radius, 0], shoulder_pos+[0, -self.human.hand_radius, 0]]
         line1 = line_points[0] - line_points[1] # from elbow to finger
         line2 = line_points[1] - line_points[2] # from shoulder to elbow
         p.addUserDebugLine(line_points[0], line_points[1], lineColorRGB=[1, 0, 0], lifeTime=2.0)  # Red line

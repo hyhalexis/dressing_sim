@@ -72,9 +72,8 @@ def evaluate(env, agent, video_dir, traj_dir, step, args):
         traj_rewards = []
 
         # Start
-        garment_idx = 2
         traj_obses = []
-        obs = env.reset()
+        obs = env.reset(motion_id=args.motion_id, garment_id=args.garment_id)
         traj_obses.append(obs)
         done = False
         episode_reward = 0
@@ -129,22 +128,23 @@ def evaluate(env, agent, video_dir, traj_dir, step, args):
                 step_action[3:] *= dtheta
 
             print('action', step_action)
-            actions_list.append(step_action)
+            # actions_list.append(step_action)
             # step_action = actions[t]
             new_obs, reward, done, info = env.step(step_action)
 
-            step_data = {
-                'obs': obs,
-                'action': step_action,
-                'new_obs': new_obs,
-                'reward': reward,
-                'info': info,
-                'img': env.step_img,
-                'gripper_pos': env.step_gripper_pos,
-                'line_points': env.step_line_pts
-            }
+            # step_data = {
+            #     'obs': obs,
+            #     'action': action,
+            #     'new_obs': new_obs,
+            #     'reward': reward,
+            #     'done': done,
+            #     'info': info,
+            #     'img': env.step_img,
+            #     'gripper_pos': env.step_gripper_pos,
+            #     'line_points': env.step_line_pts
+            # }
 
-            traj_dataset.append(step_data)
+            # traj_dataset.append(step_data)
             
             # with open(os.path.join(traj_dir, 'transition_{}.pkl'.format(t)), 'wb') as f:
             #     pickle.dump(step_data, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -173,8 +173,8 @@ def evaluate(env, agent, video_dir, traj_dir, step, args):
         # with open(os.path.join(video_dir, '{}.pkl'.format(env.garment)), 'wb') as f:
         #     pickle.dump(traj_obses, f)
 
-        with open(os.path.join(traj_dir, 'p{}_motion{}_{}_{}_{}_{}_rand{}_{}.pkl'.format(env.policy, env.motion_id, env.camera_pos, env.garment, int(env.shoulder_rand), int(env.elbow_rand), env.rand, np.max(upper_arm_ratios))), 'wb') as f:
-            pickle.dump(traj_dataset, f, protocol=pickle.HIGHEST_PROTOCOL)
+        # with open(os.path.join(traj_dir, 'p{}_motion{}_{}_{}_{}_{}_{}_{}.pkl'.format(env.policy, env.motion_id, env.camera_pos, env.garment, int(env.shoulder_rand), int(env.elbow_rand), np.max(whole_arm_ratios), np.max(upper_arm_ratios))), 'wb') as f:
+        #     pickle.dump(traj_dataset, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 
         # with open(os.path.join(traj_dir, 'actions26.pkl'), 'wb') as f:
@@ -269,7 +269,7 @@ def main(args):
         args.__dict__["seed"] = np.random.randint(1, 1000000)
     utils.set_seed_everywhere(args.seed)
 
-    env = DressingSawyerHumanEnv(policy=args.policy, motion=args.motion_id, garment=args.garment_id, horizon=args.horizon, camera_pos=args.camera_pos, rand=args.rand, render=args.render)
+    env = DressingSawyerHumanEnv(policy=args.policy, horizon=args.horizon, camera_pos=args.camera_pos, rand=args.rand, render=args.render)
 
     # make directory
     ts = time.gmtime()
@@ -279,7 +279,7 @@ def main(args):
 
     video_dir = utils.make_dir(os.path.join(args.work_dir, 'video'))
 
-    traj_dir = 'traj_data'
+    traj_dir = '/scratch/alexis/data/traj_data_1124'
     if not os.path.exists(traj_dir):
         os.mkdir(traj_dir)
 

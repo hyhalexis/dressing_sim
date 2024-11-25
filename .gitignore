@@ -120,6 +120,9 @@ venv.bak/
 *.ply
 *.pkl
 
+*.wandb
+*.yaml
+
 # data
 assistive_gym/envs/data
 assistive_gym/envs/ckpt
@@ -128,3 +131,4 @@ assistive_gym/envs/traj_gifs
 assistive_gym/envs/sim_gifs
 assistive_gym/envs/sim_imgs
 assistive_gym/envs/assets/data
+assistive_gym/envs/wandb

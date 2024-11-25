@@ -11,6 +11,7 @@ import scipy
 import copy
 import torch_geometric.transforms as T
 from matplotlib import pyplot as plt
+from tqdm import tqdm
 
 def random_crop_pc(obs, action, max_x, min_x, max_y, min_y, max_z, min_z):
     gripper_pos = obs.pos[obs.x[:, 2] == 1]
@@ -68,7 +69,7 @@ class PointCloudReplayBuffer():
     """Buffer to store environment transitions."""
 
     def __init__(self, args, action_shape, capacity, batch_size, device, transform=None,
-        data_parallel=False, td=False, discount=0.99, n_step=3):
+        data_parallel=False, td=False, discount=0.99, n_step=3, reward_relabel=False):
 
         self.args = args
         self.capacity = capacity
@@ -96,11 +97,14 @@ class PointCloudReplayBuffer():
         
 
         self.rewards = np.empty((capacity, 1), dtype=np.float32)
+        self.reward_relabel = reward_relabel
+
+        self.rewards_pref = np.empty((capacity, 1), dtype=np.float32)
         self.not_dones = np.empty((capacity, 1), dtype=np.float32)
         self.label_intersection_idxes = np.empty((capacity, 1), dtype=np.int64)
         self.non_randomized_obses = [_ for _ in range(self.capacity)]
         self.next_non_randomized_obses = [_ for _ in range(self.capacity)]
-
+        self.gripper_idx = 2
         self.idx = 0
         self.last_save = 0
         self.full = False
@@ -114,6 +118,7 @@ class PointCloudReplayBuffer():
         self.obses[self.idx] = obs
         self.next_obses[self.idx] = next_obs
         # print(obs.x.shape, action.shape)
+        # print("Encoder type: ", self.args.encoder_type)
         if 'flow' in self.args.encoder_type:
             self.actions[self.idx] = action
         else:
@@ -146,8 +151,11 @@ class PointCloudReplayBuffer():
         idxs = np.random.randint(
             0, upper_limit, size=self.batch_size
         )
-
+       
+        # print(upper_limit, self.idx, idxs.shape)
         obses = list(itemgetter(*idxs)(self.obses))
+        # for i in range(len(obses)):
+        #     print("single observation shape: ", self.obses[i].x.shape, self.obses[i].pos.shape)
         next_obses = list(itemgetter(*idxs)(self.next_obses))
         obses = Batch.from_data_list(obses).to(self.device)
         # print("obs.x.shape: ", obses.pos.shape, obses.x.shape)
@@ -155,6 +163,9 @@ class PointCloudReplayBuffer():
 
         rewards = torch.as_tensor(self.rewards[idxs], device=self.device)
         not_dones = torch.as_tensor(self.not_dones[idxs], device=self.device)
+        reward_pref = torch.as_tensor(self.rewards_pref[idxs], device=self.device)
+        # print("rewards shape: ", rewards.shape)
+        # print("not_dones shape: ", not_dones.shape)
 
         if self.td: 
             for i in range(1, self.n_step):
@@ -163,17 +174,21 @@ class PointCloudReplayBuffer():
                     not_dones_current = torch.as_tensor(self.not_dones[idxs + j], device=self.device)
                     not_dones_accu = torch.logical_and(not_dones_accu, not_dones_current)
                 step_reward = not_dones_accu * torch.as_tensor(self.rewards[idxs+i], device=self.device)
+                step_reward_pref = not_dones_accu * torch.as_tensor(self.rewards_pref[idxs+i], device=self.device)
                 # print("step reward shape: ", step_reward.shape)
                 rewards += (self.discount ** i) * step_reward
+                reward_pref += (self.discount ** i) * step_reward_pref
         
         if 'flow' in self.args.encoder_type:
             if self.args.action_mode == 'translation' or (self.args.action_mode == 'rotation' and self.args.flow_q_mode in ['all_flow', 'repeat_gripper', 'concat_latent']):
                 actions = list(itemgetter(*idxs)(self.actions))
                 actions = np.concatenate(actions)
+                # print("sample proprio ---actions shape: ", actions.shape)
                 actions = torch.from_numpy(actions).to(self.device)
             else:
                 actions = torch.as_tensor(self.actions[idxs], device=self.device)
         else:
+            # print(self.args.encoder_type)
             actions = torch.as_tensor(self.actions[idxs], device=self.device)
 
         auxiliary_term = {}
@@ -256,7 +271,9 @@ class PointCloudReplayBuffer():
                 action_anchor=actions, action_pos=actions_positive,
                 time_anchor=None, time_pos=None
             )
-
+        if self.reward_relabel:
+            # print("Returning rewards_pref")
+            return obses, actions, reward_pref, next_obses, not_dones, curl_kwargs, auxiliary_term
         return obses, actions, rewards, next_obses, not_dones, curl_kwargs, auxiliary_term
 
 
@@ -396,6 +413,76 @@ class PointCloudReplayBuffer():
         torch.save(payload, path)
         print(f'Saved replay buffer to {path}')
 
+    def parse_data(data_dir):
+        import pickle5 as pickle
+        file_nos = os.listdir(data_dir)
+        # file_nos.remove("videos")
+        file_nos = sorted(file_nos)
+        file_nos = [os.path.join(data_dir, file_no) for file_no in file_nos]
+        print(len(file_nos))
+        trajs = []
+        for i in tqdm(range(len(file_nos))):
+            print("Loading file ", file_nos[i])
+            file = file_nos[i]
+            with open(file, 'rb') as f:
+                data = pickle.load(f)
+            trajs.append(data)
+
+        transitions = [transition for traj in trajs for transition in traj]
+
+        obses = torch.tensor([t['obs'] for t in transitions], dtype=torch.float32)
+        next_obses = torch.tensor([t['new_obs'] for t in transitions], dtype=torch.float32)
+        actions = torch.tensor([t['action'] for t in transitions], dtype=torch.float32)
+        rewards = torch.tensor([t['reward'] for t in transitions], dtype=torch.float32)
+        not_dones = torch.tensor([1 for t in transitions], dtype=torch.float32)
+        non_randomized_obses = torch.tensor([t['obs'] for t in transitions], dtype=torch.float32)
+
+        payload = [obses, next_obses, actions, rewards, not_dones, non_randomized_obses]
+        return payload
+    
+    def load2(self, data_dir):
+        import pickle5 as pickle
+        file_nos = os.listdir(data_dir)
+        # file_nos.remove("videos")
+        file_nos = sorted(file_nos)
+        file_nos = [file for file in file_nos if not file.endswith("0.0.pkl")]
+        file_nos = [os.path.join(data_dir, file_no) for file_no in file_nos]
+        print(f"Total files to load (excluding '0.0.pkl'): {len(file_nos)}")
+
+        obses = []
+        next_obses = []
+        actions = []
+        rewards = []
+        not_dones = []
+        non_randomized_obses = []
+
+        for file in tqdm(file_nos, desc="Loading trajectory files"):
+            print("Loading file ", file)
+            with open(file, 'rb') as f:
+                traj = pickle.load(f)
+
+            for i, transition in enumerate(traj):
+                # Add transition components directly to lists
+                obses.append(transition['obs'])
+                next_obses.append(transition['new_obs'])
+                actions.append(transition['action'])
+                rewards.append(transition['reward'])
+                not_dones.append(1.0 if i < len(traj) - 1 else 0.0)  # Last transition gets not_done = 0
+                non_randomized_obses.append(None)
+
+        # Convert lists to tensors
+        self.obses = obses
+        self.next_obses = next_obses
+        self.actions = actions
+        self.rewards = rewards
+        self.not_dones = not_dones
+        self.non_randomized_obses = non_randomized_obses
+
+        self.idx = len(obses)
+        print(f'Loaded replay buffer from {data_dir}')
+        print("current idx {}".format(self.idx))
+        self.last_save = self.idx
+
 
     def load(self, save_dir, rb_idx, fix_load_data=False):
         save_dir = save_dir + '/' + str(rb_idx)
@@ -405,6 +492,7 @@ class PointCloudReplayBuffer():
         pre_round = 0
         for (i, chunk) in enumerate(chucks):
             start, end, round = [int(x) if 'pt' not in x else int(x[:-3]) for x in chunk.split('.')[0].split('_')]
+            # print(round)
             if i == 0:
                 self.round = round
             # this is a bit problematic as a small amount of newer data might be overwritten by older data, but this prevents empty slots in the replay buffer
@@ -421,6 +509,7 @@ class PointCloudReplayBuffer():
             self.rewards[start:end] = payload[3]
             self.not_dones[start:end] = payload[4]
             self.non_randomized_obses[start:end] = payload[5]
+            print("Round: ", round, "start: ", start, "end: ", end, "idx: ", self.idx)
             if self.round == round:
                 self.idx = end
             pre_round = round
@@ -431,3 +520,48 @@ class PointCloudReplayBuffer():
         # fix_load_data is always false for now
         # if fix_load_data:
         #     self.buffer_start = end
+    
+    
+    def process(self,obs_1, act_1,device='cuda',debug=False):
+        self.debug = debug
+        if self.debug:
+            print("process - Size of inputs as obs_1:", len(obs_1))
+            print("process - Size of inputs as act_1:", len(act_1))
+        # obs_1 = copy.deepcopy(obs_1)
+        # obs_2 = copy.deepcopy(obs_2)
+        # act_1 = copy.deepcopy(act_1)
+        # act_2 = copy.deepcopy(act_2)
+        if isinstance(obs_1[0], Data):
+            # print("process - obs_1[0].x.shape:", obs_1[0].x.shape)
+            obs_1 = Batch.from_data_list(obs_1).to(device)
+        else:
+            raise ValueError("obs_1 and obs_2 must be lists of Data objects.")
+        
+        if 'flow' in self.args.encoder_type:
+            if self.args.action_mode == 'translation' or (self.args.action_mode == 'rotation' and self.args.flow_q_mode in ['all_flow', 'repeat_gripper', 'concat_latent']):
+                act_1 = act_1[0]# act_1 = np.concatenate(act_1)
+                act_1 = torch.from_numpy(act_1).float().to(self.device)
+        else:
+                act_1 = act_1[0]
+                act_1 = torch.as_tensor(act_1, device=self.device)
+        
+        if self.debug:
+            print("process - Size after making into batch class obs1.x:", obs_1.x.shape)
+            print("process - Size after making into concat act1:", act_1.shape)
+            print("process - Batch size of obs1:", obs_1.batch_size)
+        
+        # for b_idx in range(obs_1.batch_size):
+        #     act_1[(obs_1.batch == b_idx)] = act_1[(obs_1.batch == b_idx) & (obs_1.x[:, self.gripper_idx] == 1)]
+        return obs_1, act_1
+    
+    def relabel_rewards(self, reward_model1, reward_model2, device='cuda'):
+        for i in tqdm(range(self.idx)):
+            obs, action, reward, done, next_obs = self.obses[i], self.actions[i], self.rewards[i], self.not_dones[i], self.next_obses[i]
+            obs = obs.to(device)
+            next_obs = next_obs.to(device)
+            obs, act = self.process([obs], [action], device=device)
+            reward = reward
+            done = done
+            with torch.no_grad():
+                reward_pref = 0.7 * reward_model1.r_hat(obs, act) + 0.3 * reward_model2.r_hat(obs, act)
+            self.rewards_pref[i] = reward_pref

@@ -225,14 +225,14 @@ class PcFlowEncoder(nn.Module):
 
 _AVAILABLE_ENCODERS = {
     'pixel': PixelEncoder, 'identity': IdentityEncoder, 
-    # 'pointcloud': PcEncoder,
+    'pointcloud': PcEncoder,
     'pointcloud_flow': PcFlowEncoder,
 }
 
 def make_encoder(
     encoder_type, obs_shape, feature_dim, num_layers, num_filters, args,
     output_logits=False, residual=False
-):  
+):
     # assert encoder_type in _AVAILABLE_ENCODERS
     if encoder_type in ['pixel', 'identity']:
         return _AVAILABLE_ENCODERS[encoder_type](

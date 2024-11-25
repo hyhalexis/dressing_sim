@@ -24,8 +24,8 @@ from sklearn.metrics import accuracy_score
 # from dressing_motion.curl.vlm_reward.gemini_infer import gemini_query_2, gemini_query_1
 # from conv_net import CNN, fanin_init
 
-from dressing_motion.curl.pc_replay_buffer import PointCloudReplayBuffer
-from dressing_motion.curl.encoder import make_encoder
+# from dressing_motion.curl.pc_replay_buffer import PointCloudReplayBuffer
+from encoder import make_encoder
 import copy
 
 device = 'cuda:0'
@@ -2076,7 +2076,7 @@ class RewardModelImage:
 
 class RewardModelVLM:
     def __init__(self, ds, da, args,
-                 ensemble_size=5, lr=3e-6, mb_size = 64, size_segment=1, 
+                 ensemble_size=5, lr=3e-7, mb_size = 64, size_segment=1, 
                  max_size=5000, activation='tanh', capacity=5e5,  
                  large_batch=1, label_margin=0.0, 
                  teacher_beta=-1, teacher_gamma=1, 
@@ -2236,6 +2236,7 @@ class RewardModelVLM:
         file_list = os.listdir(data_dir)
         file_list = sorted(file_list)
         file_list = [os.path.join(data_dir, x) for x in file_list]
+        file_list = file_list[len(file_list)//3:(len(file_list)//3)*2]
         
         dict_1_list = []
         dict_2_list = []
@@ -2263,8 +2264,6 @@ class RewardModelVLM:
             dict_2_list += dict_list_2
             label_list +=  lab_list
             
-            
-            
         obs_1_list = []
         obs_2_list = []
         act_1_list = []
@@ -2275,19 +2274,24 @@ class RewardModelVLM:
             dict_1 = dict_1_list[idx]
             dict_2 = dict_2_list[idx]
             label = copy.deepcopy(label_list[idx])
-            
-            len_1 = len(dict_1['observations'])
-            len_2 = len(dict_2['observations'])
+            len_1 = len(dict_1['obs'])
+            len_2 = len(dict_2['obs'])
             
             ind_1 = np.random.choice(len_1, 1)[0]
             ind_2 = np.random.choice(len_2, 1)[0]
             
-            obs_1 =  copy.deepcopy(dict_1["observations"][ind_1])
-            obs_2 =  copy.deepcopy(dict_2["observations"][ind_2])
+            # obs_1 =  copy.deepcopy(dict_1["obs"][ind_1])
+            # obs_2 =  copy.deepcopy(dict_2["obs"][ind_2])
             
-            act_1 = copy.deepcopy(dict_1["actions"][ind_1])
-            act_2 = copy.deepcopy(dict_2["actions"][ind_2])
+            # act_1 = copy.deepcopy(dict_1["action"][ind_1])
+            # act_2 = copy.deepcopy(dict_2["action"][ind_2])
+
+            obs_1 =  copy.deepcopy(dict_1["obs"])
+            obs_2 =  copy.deepcopy(dict_2["obs"])
             
+            act_1 = copy.deepcopy(dict_1["action"])
+            act_2 = copy.deepcopy(dict_2["action"])
+
             obs_1_list.append(obs_1)
             obs_2_list.append(obs_2)
             act_1_list.append(act_1)
@@ -2459,7 +2463,6 @@ class RewardModelVLM:
         # act_1 = copy.deepcopy(act_1)
         # act_2 = copy.deepcopy(act_2)
         if isinstance(obs_1[0], Data):
-            # print("process - obs_1[0].x.shape:", obs_1[0].x.shape)
             obs_1 = Batch.from_data_list(obs_1)
             obs_2 = Batch.from_data_list(obs_2)
         else:
@@ -2480,8 +2483,8 @@ class RewardModelVLM:
             print("process - Size after making into batch class obs2.x:", obs_2.x.shape)
             print("process - Size after making into concat act1:", act_1.shape)
             print("process - Size after making into concat act2:", act_2.shape)
-            print("process - Batch size of obs1:", obs_1.batch_size)
-            print("process - Batch size of obs2:", obs_2.batch_size)
+            print("process - Batch size of obs1:", obs_1.batch)
+            print("process - Batch size of obs2:", obs_2.batch)
         
         # if 'flow' in self.args.encoder_type:
         #     assert obs_1.batch_size == obs_2.batch_size
@@ -2552,10 +2555,10 @@ class RewardModelVLM:
 
         return np.mean(r_hats, axis=0)
     
-    def save(self, model_dir, step):
+    def save(self, model_dir, step, acc):
         for member in range(self.de):
             torch.save(
-                self.ensemble[member].state_dict(), '%s/reward_model_%s_%s.pt' % (model_dir, step, member)
+                self.ensemble[member].state_dict(), '%s/reward_model_%s_%s_%s.pt' % (model_dir, step, member, acc)
             )
             
     def load(self, model_dir, step):

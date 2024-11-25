@@ -440,8 +440,8 @@ class AssistiveEnv(gym.Env):
         # get a depth image
         rgba, depth, segmentation_mask = self.get_camera_image_depth()
         self.step_img = rgba[..., :3]
-        image = Image.fromarray(rgba[..., :3], 'RGB')
-        image.save('sim_imgs/new_image_{}_{}_{}_{}_{}.png'.format(self.garment, self.elastic_stiffness, self.damping_stiffness, self.all_direction, self.bending_stiffnes))
+        # image = Image.fromarray(rgba[..., :3], 'RGB')
+        # image.save('sim_imgs/new_image_{}_{}_{}_{}_{}.png'.format(self.garment, self.elastic_stiffness, self.damping_stiffness, self.all_direction, self.bending_stiffnes))
         # import pdb;pdb.set_trace()
 
         rgba = rgba.reshape((-1, 4))
