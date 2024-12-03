@@ -104,13 +104,15 @@ class PointCloudReplayBuffer():
         self.label_intersection_idxes = np.empty((capacity, 1), dtype=np.int64)
         self.non_randomized_obses = [_ for _ in range(self.capacity)]
         self.next_non_randomized_obses = [_ for _ in range(self.capacity)]
-        self.gripper_idx = 2
+        self.gripper_idx = 1
         self.idx = 0
         self.last_save = 0
         self.full = False
         # self.buffer_start = 0
         self.rotation_transform = T.RandomRotate(360, 1)
         self.scale_transform = T.RandomScale((0.8, 1.2))
+        self.reward1_w = args.r1_w
+        self.reward2_w = args.r2_w
 
     def add(self, obs, action, reward, next_obs, done, non_randomized_obs=None, next_non_randomized_obs=None, label_intersection_idx=-1):
         # NOTE: now: obs is actually a data object from pytorch geometric
@@ -151,7 +153,8 @@ class PointCloudReplayBuffer():
         idxs = np.random.randint(
             0, upper_limit, size=self.batch_size
         )
-       
+        # idxs = torch.tensor(idxs, dtype=torch.long, device=self.device)
+
         # print(upper_limit, self.idx, idxs.shape)
         obses = list(itemgetter(*idxs)(self.obses))
         # for i in range(len(obses)):
@@ -160,10 +163,13 @@ class PointCloudReplayBuffer():
         obses = Batch.from_data_list(obses).to(self.device)
         # print("obs.x.shape: ", obses.pos.shape, obses.x.shape)
         next_obses = Batch.from_data_list(next_obses).to(self.device)
+        rewards = np.array(self.rewards)
+        not_dones = np.array(self.not_dones)
+        rewards_pref = np.array(self.rewards_pref)
 
-        rewards = torch.as_tensor(self.rewards[idxs], device=self.device)
-        not_dones = torch.as_tensor(self.not_dones[idxs], device=self.device)
-        reward_pref = torch.as_tensor(self.rewards_pref[idxs], device=self.device)
+        rewards = torch.as_tensor(rewards[idxs], device=self.device)
+        not_dones = torch.as_tensor(not_dones[idxs], device=self.device)
+        reward_pref = torch.as_tensor(rewards_pref[idxs], device=self.device)
         # print("rewards shape: ", rewards.shape)
         # print("not_dones shape: ", not_dones.shape)
 
@@ -440,14 +446,17 @@ class PointCloudReplayBuffer():
         payload = [obses, next_obses, actions, rewards, not_dones, non_randomized_obses]
         return payload
     
-    def load2(self, data_dir):
+    def save_as_payload(self, data_dir):
         import pickle5 as pickle
+        import random
         file_nos = os.listdir(data_dir)
         # file_nos.remove("videos")
         file_nos = sorted(file_nos)
-        file_nos = [file for file in file_nos if not file.endswith("0.0.pkl")]
+        file_nos = [file for file in file_nos if not file.endswith("0.0_0.0.pkl")]
         file_nos = [os.path.join(data_dir, file_no) for file_no in file_nos]
-        print(f"Total files to load (excluding '0.0.pkl'): {len(file_nos)}")
+        sampled_files = random.sample(file_nos, min(200, len(file_nos)))
+
+        print(f"Total files to load (excluding '0.0.pkl'): {len(sampled_files)}")
 
         obses = []
         next_obses = []
@@ -456,7 +465,7 @@ class PointCloudReplayBuffer():
         not_dones = []
         non_randomized_obses = []
 
-        for file in tqdm(file_nos, desc="Loading trajectory files"):
+        for file in tqdm(sampled_files, desc="Loading trajectory files"):
             print("Loading file ", file)
             with open(file, 'rb') as f:
                 traj = pickle.load(f)
@@ -466,21 +475,38 @@ class PointCloudReplayBuffer():
                 obses.append(transition['obs'])
                 next_obses.append(transition['new_obs'])
                 actions.append(transition['action'])
+                # flex_action = transition['action'][[1, 2, 0, 4, 5, 3]]
+                # actions.append(flex_action)
                 rewards.append(transition['reward'])
                 not_dones.append(1.0 if i < len(traj) - 1 else 0.0)  # Last transition gets not_done = 0
                 non_randomized_obses.append(None)
+        
+        payload = [obses, next_obses, actions, rewards, not_dones, non_randomized_obses]
+        torch.save(payload, '/scratch/alexis/data/payload_1124_subset')
+
+
+    def load2(self, data_dir):
+        # self.save_as_payload(data_dir)
+        payload = torch.load('/scratch/alexis/data/payload_1124')
 
         # Convert lists to tensors
-        self.obses = obses
-        self.next_obses = next_obses
-        self.actions = actions
-        self.rewards = rewards
-        self.not_dones = not_dones
-        self.non_randomized_obses = non_randomized_obses
+        self.obses = payload[0]
+        self.next_obses = payload[1]
+        self.actions = [action.reshape(-1, 6) for action in payload[2]]
+        # actions_gripper = payload[2]
+        self.rewards = payload[3]
+        self.not_dones = payload[4]
+        self.non_randomized_obses = payload[5]
 
-        self.idx = len(obses)
-        print(f'Loaded replay buffer from {data_dir}')
-        print("current idx {}".format(self.idx))
+        # temp = []
+
+        # for idx in range(len(actions_gripper)):
+        #     obs_size = self.obses[idx].x.shape[0]
+        #     actions = np.vstack([actions_gripper[idx]] * obs_size)
+        #     temp.append(actions)
+        
+        # self.actions = temp
+        self.idx = len(payload[3])
         self.last_save = self.idx
 
 
@@ -534,11 +560,13 @@ class PointCloudReplayBuffer():
         if isinstance(obs_1[0], Data):
             # print("process - obs_1[0].x.shape:", obs_1[0].x.shape)
             obs_1 = Batch.from_data_list(obs_1).to(device)
+            # print(obs_1)
         else:
             raise ValueError("obs_1 and obs_2 must be lists of Data objects.")
         
         if 'flow' in self.args.encoder_type:
             if self.args.action_mode == 'translation' or (self.args.action_mode == 'rotation' and self.args.flow_q_mode in ['all_flow', 'repeat_gripper', 'concat_latent']):
+                # act_1 = np.concatenate(act_1)
                 act_1 = act_1[0]# act_1 = np.concatenate(act_1)
                 act_1 = torch.from_numpy(act_1).float().to(self.device)
         else:
@@ -548,10 +576,10 @@ class PointCloudReplayBuffer():
         if self.debug:
             print("process - Size after making into batch class obs1.x:", obs_1.x.shape)
             print("process - Size after making into concat act1:", act_1.shape)
-            print("process - Batch size of obs1:", obs_1.batch_size)
+            print("process - Batch size of obs1:", obs_1.batch)
         
-        # for b_idx in range(obs_1.batch_size):
-        #     act_1[(obs_1.batch == b_idx)] = act_1[(obs_1.batch == b_idx) & (obs_1.x[:, self.gripper_idx] == 1)]
+        for b_idx in obs_1.batch:
+            act_1[(obs_1.batch == b_idx)] = act_1[(obs_1.batch == b_idx) & (obs_1.x[:, self.gripper_idx] == 1)]
         return obs_1, act_1
     
     def relabel_rewards(self, reward_model1, reward_model2, device='cuda'):
@@ -563,5 +591,5 @@ class PointCloudReplayBuffer():
             reward = reward
             done = done
             with torch.no_grad():
-                reward_pref = 0.7 * reward_model1.r_hat(obs, act) + 0.3 * reward_model2.r_hat(obs, act)
+                reward_pref = self.reward1_w * reward_model1.r_hat(obs, act) + self.reward2_w * reward_model2.r_hat(obs, act)
             self.rewards_pref[i] = reward_pref

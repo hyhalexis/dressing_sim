@@ -3,27 +3,29 @@ import pickle5 as pickle
 import matplotlib.pyplot as plt
 import open3d as o3d
 
-traj_path = 'traj_data/p2_motion7_side_tshirt_68.pkl'
+traj_path = '/scratch/alexis/data/traj_data_1124/p2_motion4_front_tshirt_26_79_-91_rand0_0.864966335763436_0.8569692054217956.pkl'
 with open (traj_path, 'rb') as f:
     traj_data = pickle.load(f)
 
-print('Length: {}'.format(len(traj_data)))
-print('First entry: {}'.format(traj_data[0]))
-print('Last entry: {}'.format(traj_data[-1]))
+# print('Length: {}'.format(len(traj_data)))
+# print('First entry: {}'.format(traj_data[0]))
+# print('Last entry: {}'.format(traj_data[-1]))
 print(traj_data[0]['obs'].pos.shape)
 
 image0 = traj_data[0]['img']
 plt.imshow(image0)
 # plt.show()
+print('action gripper', traj_data[0]['action'].reshape(-1, 6)[-1])
 print('gripper0', traj_data[0]['gripper_pos'])
 print('line0', traj_data[0]['line_points'])
 
 
-image53 = traj_data[53]['img']
+image53 = traj_data[37]['img']
 plt.imshow(image53)
 # plt.show()
-print('gripper53', traj_data[53]['gripper_pos'])
-print('line53', traj_data[53]['line_points'])
+print('action gripper', traj_data[37]['action'].reshape(-1, 6)[-1])
+print('gripper53', traj_data[37]['gripper_pos'])
+print('line53', traj_data[37]['line_points'])
 
 def create_axes(length=0.5):
     # Create lines for the axes
@@ -56,9 +58,9 @@ def create_axes(length=0.5):
 axes = create_axes(length=0.5)
 
 
-pc0 = traj_data[0]['obs'].pos.reshape(-1,3)
-gripper0 = np.array(traj_data[0]['gripper_pos']).reshape(-1,3)
-line0 = np.array(traj_data[0]['line_points']).reshape(-1,3)
+pc0 = traj_data[78]['obs'].pos.reshape(-1,3)
+gripper0 = np.array(traj_data[78]['gripper_pos']).reshape(-1,3)
+line0 = np.array(traj_data[78]['line_points']).reshape(-1,3)
 
 point_cloud = o3d.geometry.PointCloud()
 point_cloud.points = o3d.utility.Vector3dVector(pc0)

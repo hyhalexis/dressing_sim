@@ -239,7 +239,7 @@ class IQLAgent(object):
         )
         
         if self.args.resume_from_ckpt:
-            self.load(self.args.resume_from_path_actor, self.args.resume_from_path_critic, load_optimizer=True)
+            self.load(self.args.resume_from_path_actor, self.args.resume_from_path_critic, self.args.resume_from_path_value, load_optimizer=True)
 
             
         if self.args.lr_decay is not None:
@@ -573,10 +573,10 @@ class IQLAgent(object):
             self.CURL.state_dict(), '%s/curl_%s.pt' % (model_dir, step)
         )
 
-    def load(self, actor_path, critic_path, value_path,load_optimizer=False):
-        actor_checkpoint  = torch.load(actor_path)
-        critic_checkpoint = torch.load(critic_path)
-        value_checkpoint = torch.load(value_path)
+    def load(self, actor_path, critic_path, value_path, load_optimizer=False):
+        actor_checkpoint  = torch.load(actor_path, map_location=self.device)
+        critic_checkpoint = torch.load(critic_path, map_location=self.device)
+        value_checkpoint = torch.load(value_path, map_location=self.device)
 
         self.load_helper(self.actor, actor_path)
         self.load_helper(self.critic, critic_path)
@@ -599,7 +599,7 @@ class IQLAgent(object):
         print("loaded value model from {}".format(value_path))
 
     def load_helper(self, model, ckpt_path):
-        ckpt  = torch.load(osp.join(ckpt_path))
+        ckpt  = torch.load(osp.join(ckpt_path), map_location=self.device)
         if isinstance(ckpt, dict) and 'model_state_dict' in ckpt:
             model.load_state_dict(
                 ckpt['model_state_dict']

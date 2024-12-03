@@ -132,22 +132,22 @@ def evaluate(env, agent, video_dir, traj_dir, step, args):
             # step_action = actions[t]
             new_obs, reward, done, info = env.step(step_action)
 
-            # step_data = {
-            #     'obs': obs,
-            #     'action': action,
-            #     'new_obs': new_obs,
-            #     'reward': reward,
-            #     'done': done,
-            #     'info': info,
-            #     'img': env.step_img,
-            #     'gripper_pos': env.step_gripper_pos,
-            #     'line_points': env.step_line_pts
-            # }
+            step_data = {
+                'obs': obs,
+                'action': action,
+                'new_obs': new_obs,
+                'reward': reward,
+                'done': done,
+                'info': info,
+                'img': env.step_img,
+                'gripper_pos': env.step_gripper_pos,
+                'line_points': env.step_line_pts
+            }
 
             # traj_dataset.append(step_data)
             
-            # with open(os.path.join(traj_dir, 'transition_{}.pkl'.format(t)), 'wb') as f:
-            #     pickle.dump(step_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+            with open(os.path.join(traj_dir, 'transition_{}.pkl'.format(t)), 'wb') as f:
+                pickle.dump(step_data, f, protocol=pickle.HIGHEST_PROTOCOL)
 
             obs = new_obs
             if obs is None: # collision avoidance-skip action
@@ -270,7 +270,7 @@ def main(args):
     utils.set_seed_everywhere(args.seed)
 
     env = DressingSawyerHumanEnv(policy=args.policy, horizon=args.horizon, camera_pos=args.camera_pos, rand=args.rand, render=args.render)
-
+    
     # make directory
     ts = time.gmtime()
     ts = time.strftime("%m-%d", ts)

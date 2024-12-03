@@ -91,8 +91,37 @@ def vv_to_args(vv):
 def run_task(vv, log_dir=None, exp_name=None):
     # if resume from directory
     # log_dir = "/home/sreyas/Desktop/Projects/softagent_rpad/data/reward_collection/"
-    if vv['resume_from_ckpt']:
-        log_dir = vv['resume_from_exp_path']
+    if vv.variants()[-1]['resume_from_ckpt']:
+        if vv.variants()[-1]['policy'] == 1:
+            if vv.variants()[-1]['r1_w'] == 0.7:
+                log_dir = vv.variants()[-1]['resume_from_exp_path_p1_7030']
+
+            elif vv.variants()[-1]['r1_w'] == 0.5:
+                log_dir = vv.variants()[-1]['resume_from_exp_path_p1_5050']
+
+            elif vv.variants()[-1]['r1_w'] == 1.0:
+                 log_dir = vv.variants()[-1]['resume_from_exp_path_p1_100'] + '_fixed'
+
+        elif vv.variants()[-1]['policy'] == 2:
+            if vv.variants()[-1]['r1_w'] == 0.7:
+                log_dir = vv.variants()[-1]['resume_from_exp_path_p2_7030']
+
+            elif vv.variants()[-1]['r1_w'] == 0.5:
+                log_dir = vv.variants()[-1]['resume_from_exp_path_p2_5050']
+
+            elif vv.variants()[-1]['r1_w'] == 1.0:
+                log_dir = vv.variants()[-1]['resume_from_exp_path_p2_100']
+
+        elif vv.variants()[-1]['policy'] == 0:
+            if vv.variants()[-1]['r1_w'] == 0.7:
+                log_dir = vv.variants()[-1]['resume_from_exp_path_p0_7030']
+
+            elif vv.variants()[-1]['r1_w'] == 0.5:
+                log_dir = vv.variants()[-1]['resume_from_exp_path_p0_5050']
+
+            elif vv.variants()[-1]['r1_w'] == 1.0:
+                log_dir = vv.variants()[-1]['resume_from_exp_path_p0_100']
+
     if log_dir or logger.get_dir() is None:
         logger.configure(dir=log_dir, exp_name=exp_name, format_strs=['csv'])
     logdir = logger.get_dir()
@@ -137,21 +166,18 @@ def check_rb_min_size(replay_buffers, rb_limit):
     return min_len
 
 # run evaluation of a policy
-def evaluate(env, agent, video_dir, L, step, args, get_step_func=None):
+def evaluate(agent, video_dir, L, step, args, get_step_func=None):
     factor = args.save_gif_factor
-    env._wrapped_env.eval_flag = True
     if step >= args.saving_gif_start and (step // args.eval_freq) % factor == 0:
-        env._wrapped_env.show_reward = True
         imsize = 720
 
     def run_eval_loop(sample_stochastically=True):
         start_time = time.time()
-        prefix = env._wrapped_env.garments[0] + '_'
+        prefix = '_'
         all_traj_returns_garments_poses = defaultdict(lambda: defaultdict(list))
         # {region_num_0: {garment0: [pose0, pose1, ...], garment1: [...], ....., garment4: [...]}, ...., region_num_27: ...}
         all_upperarm_ratio_garments_poses = defaultdict(lambda: defaultdict(list))
 
-        args.all_eval_poses = args.eval_poses
         # breakpoint()
         gif_saved = False
         if step >= args.saving_gif_start and (step // args.eval_freq) % factor == 0 and not gif_saved:
@@ -159,16 +185,16 @@ def evaluate(env, agent, video_dir, L, step, args, get_step_func=None):
 
         cnt = 0
         garment_ids = [1, 2]
+
+        # motion_ids = [0]
         motion_ids = [0, 2, 4, 5, 6, 7]
         
         for garment_id in garment_ids:
 
-            env.cur_garment_idx = garment_id
-            env.set_garment(env.cur_garment_idx)
-
             for motion_id in motion_ids:
-                
-                obs = env.reset(garment_id=garment_id, motion_id=motion_id)
+                env = DressingSawyerHumanEnv(policy=args.policy, horizon=args.horizon, camera_pos=args.camera_pos, rand=args.rand, render=args.render, gif_path=args.gif_path)
+
+                obs = env.reset(garment_id=garment_id, motion_id=motion_id, step_idx = step)
                 done = False
                 episode_reward = 0
                 ep_info = []
@@ -182,12 +208,15 @@ def evaluate(env, agent, video_dir, L, step, args, get_step_func=None):
                 
                 t = 0
                 while not done:
+                    print('------Iteration', t)
+
                     with utils.eval_mode(agent):
                         action = agent.select_action(obs)
                     step_action = action.reshape(-1, 6)[-1].flatten()
                     # step_action[3] = 0
 
                     # step_action[:3] *= 0.01
+                    print('action: ', step_action)
                     x, y, z = step_action[:3].copy() * args.action_scale
                     x_r, y_r, z_r = step_action[3:].copy()
 
@@ -211,6 +240,7 @@ def evaluate(env, agent, video_dir, L, step, args, get_step_func=None):
                         step_action[3:] *= dtheta
 
                     obs, reward, done, info = env.step(step_action)
+                    print('step action:', step_action)
                     episode_reward += reward
                     ep_info.append(info)
                     rewards.append(reward)
@@ -238,8 +268,11 @@ def evaluate(env, agent, video_dir, L, step, args, get_step_func=None):
                     wandb.log({'garmemt{}_motion{}_episode_reward'.format(garment_id, motion_id): episode_reward, 'step': step})
                     wandb.log({'garmemt{}_motion{}_episode_dressed_ratio'.format(garment_id, motion_id): info['upperarm_ratio'], 'step': step})
 
-                for key, val in get_info_stats([ep_info]).items():
-                    L.log('eval/garmemt{}_motion{}_info_'.format(garment_id, motion_id) + key, val, step)
+                # L.log('eval/garmemt{}_motion{}_info_'.format(garment_id, motion_id) + key, val, step)
+
+
+                # for key, val in get_info_stats([ep_info]).items():
+                #     L.log('eval/garmemt{}_motion{}_info_'.format(garment_id, motion_id) + key, val, step)
 
                 cnt += 1
 
@@ -255,9 +288,9 @@ def evaluate(env, agent, video_dir, L, step, args, get_step_func=None):
         garment_upperarm_ratio_means = []
         # log reward for every motion, averaged across garment
         for motion_id in motion_ids:
-            prefix = motion_id + '_'
+            prefix = str(motion_id) + '_'
             all_traj_returns_all_poses = np.array([
-                all_traj_returns_garments_poses[garment_id][garment_id] 
+                all_traj_returns_garments_poses[garment_id][motion_id] 
                 for garment_id in garment_ids 
                 if not (
                     isinstance(all_traj_returns_garments_poses[garment_id][motion_id], list) and
@@ -291,6 +324,43 @@ def evaluate(env, agent, video_dir, L, step, args, get_step_func=None):
 
             garment_reward_means.append(mean_ep_reward)
             garment_upperarm_ratio_means.append(mean_upperarm_ratio)
+
+         # log reward for every garment, averaged across motion
+        for garment_id in garment_ids:
+            prefix = str(garment_id) + '_'
+            all_traj_returns_all_poses = np.array([
+                all_traj_returns_garments_poses[garment_id][motion_id] 
+                for motion_id in motion_ids 
+                if not (
+                    isinstance(all_traj_returns_garments_poses[garment_id][motion_id], list) and
+                    len(all_traj_returns_garments_poses[garment_id][motion_id]) == 0
+                )
+            ])
+            all_upperarm_ratio_all_poses = np.array([
+                all_upperarm_ratio_garments_poses[garment_id][motion_id] 
+                for motion_id in motion_ids 
+                if not (
+                    isinstance(all_traj_returns_garments_poses[garment_id][motion_id], list) and
+                    len(all_traj_returns_garments_poses[garment_id][motion_id]) == 0
+                )
+            ])
+
+            if (len(all_traj_returns_all_poses) == 0): continue
+
+            mean_ep_reward, best_ep_reward = np.mean(all_traj_returns_all_poses), np.max(all_traj_returns_all_poses)
+            mean_upperarm_ratio, best_upperarm_ratio = np.mean(all_upperarm_ratio_all_poses), np.max(all_upperarm_ratio_all_poses)
+            L.log('eval/' + prefix + 'mean_episode_reward', mean_ep_reward, step)
+            L.log('eval/' + prefix + 'best_episode_reward', best_ep_reward, step)
+            L.log('eval/' + prefix + 'mean_upperarm_ratio', mean_upperarm_ratio, step)
+            L.log('eval/' + prefix + 'best_upperarm_ratio', best_upperarm_ratio, step)
+
+            if args.use_wandb: 
+                wandb.log({'motion{}_mean_ep_reward'.format(garment_id): mean_ep_reward, 'step': step})
+                wandb.log({'motion{}_best_ep_reward'.format(garment_id): best_ep_reward, 'step': step})
+                wandb.log({'motion{}_mean_upper_ratio'.format(garment_id): mean_upperarm_ratio, 'step': step})
+                wandb.log({'motion{}_best_upper_ratio'.format(garment_id): best_upperarm_ratio, 'step': step})
+
+
             
         mean_ep_reward = np.mean(garment_reward_means)
         mean_upperarm_ratio = np.mean(garment_upperarm_ratio_means)
@@ -300,7 +370,6 @@ def evaluate(env, agent, video_dir, L, step, args, get_step_func=None):
         if args.use_wandb: 
             wandb.log({'mean_episode_reward': mean_ep_reward, 'step': step})
             wandb.log({'mean_upperarm_ratio': mean_upperarm_ratio, 'step': step})
-
 
         return mean_ep_reward, mean_upperarm_ratio
     mean_ep_reward, mean_upperarm_ratio = run_eval_loop(sample_stochastically=False)
@@ -356,21 +425,96 @@ def main(args):
     utils.set_seed_everywhere(args.seed)
 
     args.__dict__ = update_env_kwargs(args.__dict__)  # Update env_kwargs
+    if args.policy == 1:
+        args.horizon = 250
+    elif args.policy == 2:
+        args.horizon == 170
+    else:
+        args.horizon = 200
+    
+    print('horizon', args.horizon)
 
-    env = DressingSawyerHumanEnv(policy=args.policy, horizon=args.horizon, camera_pos=args.camera_pos, rand=args.rand, render=args.render)
+    if args.policy == 1:
+        args.actor_load_name = args.actor_load_name_1
+    
+    elif args.policy == 2:
+        args.actor_load_name = args.actor_load_name_2
+
+    if args.resume_from_ckpt:
+        if args.policy == 1:
+            if args.r1_w == 0.7:
+                args.resume_from_path_actor = args.resume_from_path_actor_p1_7030
+                args.resume_from_path_critic = args.resume_from_path_critic_p1_7030
+                args.resume_from_path_value = args.resume_from_path_value_p1_7030
+
+            elif args.r1_w == 0.5:
+                args.resume_from_path_actor = args.resume_from_path_actor_p1_5050
+                args.resume_from_path_critic = args.resume_from_path_critic_p1_5050
+                args.resume_from_path_value = args.resume_from_path_value_p1_5050
+
+            elif args.r1_w == 1.0:
+                args.resume_from_path_actor = args.resume_from_path_actor_p1_100
+                args.resume_from_path_critic = args.resume_from_path_critic_p1_100
+                args.resume_from_path_value = args.resume_from_path_value_p1_100
+
+        elif args.policy == 2:
+            if args.r1_w == 0.7:
+                args.resume_from_path_actor = args.resume_from_path_actor_p2_7030
+                args.resume_from_path_critic = args.resume_from_path_critic_p2_7030
+                args.resume_from_path_value = args.resume_from_path_value_p2_7030
+
+            elif args.r1_w == 0.5:
+                args.resume_from_path_actor = args.resume_from_path_actor_p2_5050
+                args.resume_from_path_critic = args.resume_from_path_critic_p2_5050
+                args.resume_from_path_value = args.resume_from_path_value_p2_5050
+
+            elif args.r1_w == 1.0:
+                args.resume_from_path_actor = args.resume_from_path_actor_p2_100
+                args.resume_from_path_critic = args.resume_from_path_critic_p2_100
+                args.resume_from_path_value = args.resume_from_path_value_p2_100
+        
+        elif args.policy == 0:
+            if args.r1_w == 0.7:
+                args.resume_from_path_actor = args.resume_from_path_actor_p0_7030
+                args.resume_from_path_critic = args.resume_from_path_critic_p0_7030
+                args.resume_from_path_value = args.resume_from_path_value_p0_7030
+
+            elif args.r1_w == 0.5:
+                args.resume_from_path_actor = args.resume_from_path_actor_p0_5050
+                args.resume_from_path_critic = args.resume_from_path_critic_p0_5050
+                args.resume_from_path_value = args.resume_from_path_value_p0_5050
+
+            elif args.r1_w == 1.0:
+                args.resume_from_path_actor = args.resume_from_path_actor_p0_100
+                args.resume_from_path_critic = args.resume_from_path_critic_p0_100
+                args.resume_from_path_value = args.resume_from_path_value_p0_100
+        else:
+            print('Unable to load')
+
+    print('Policy: ', args.actor_load_name)
+    if args.resume_from_ckpt:
+        print('Resuming from: ', args.resume_from_path_actor, args.resume_from_path_critic, args.resume_from_path_value)
+
+    # env = DressingSawyerHumanEnv(policy=args.policy, horizon=args.horizon, camera_pos=args.camera_pos, rand=args.rand, render=args.render, path_suffix=int(args.r1_w*10))
+    gif_path = '{}/gifs'.format(logger.get_dir())
+    os.makedirs(gif_path, exist_ok=True)
+    print('Saving gifs at: ', gif_path)
+
 
     # make directory for logging
     ts = time.gmtime()
     ts = time.strftime("%m-%d", ts)
     dataset_dir = args.dataset_dir
-    args.work_dir = '/scratch/alexis/data/'
+    args.work_dir = logger.get_dir()
+    args.gif_path = gif_path
     video_dir = utils.make_dir(os.path.join(args.work_dir, 'video'))
     model_dir = utils.make_dir(os.path.join(args.work_dir, 'model'))
     buffer_dir = utils.make_dir(os.path.join(args.work_dir, 'buffer'))
     L = Logger(args.work_dir, use_tb=args.save_tb, chester_logger=logger)
 
     # create replay buffer
-    device = torch.device('cuda:{}'.format(args.cuda_idx) if torch.cuda.is_available() else 'cpu')
+    # device = torch.device('cuda:{}'.format(args.cuda_idx) if torch.cuda.is_available() else 'cpu')
+    device = 'cuda:0'
     action_shape = (6,)
     obs_shape = (30000,)
     replay_buffers = []
@@ -380,7 +524,7 @@ def main(args):
     buffer = PointCloudReplayBuffer(
         args, action_shape, rb_limit, args.batch_size, device, td=args.__dict__.get("td", False), n_step=args.__dict__.get("n_step", 1),reward_relabel=args.reward_relabel
     )
-    buffer.load2(dataset_dir)
+    buffer.load2(args.parsed_dataset_dir)
     reward_model1 = RewardModelVLM(obs_shape, action_shape, args, use_action=args.reward_model_use_action)
     reward_model1.load(args.reward_model1_dir, args.reward_model1_step)
     reward_model1.eval()
@@ -391,7 +535,7 @@ def main(args):
 
     if args.reward_relabel:
         with torch.no_grad():
-            buffer.relabel_rewards(reward_model1, reward_model2)
+            buffer.relabel_rewards(reward_model1, reward_model2, device=device)
         print("Relabeling done")
     replay_buffers.append(buffer)
     # create agent
@@ -407,9 +551,11 @@ def main(args):
 
     # if resume exp
     if args.resume_from_ckpt:
-        agent.load(args.resume_from_path_actor, args.resume_from_path_critic, load_optimizer=args.resume_from_ckpt)
-        ckpt  = torch.load(osp.join(args.resume_from_path_critic))
-
+        agent.load(args.resume_from_path_actor, args.resume_from_path_critic, args.resume_from_path_value, load_optimizer=args.resume_from_ckpt)
+        ckpt  = torch.load(osp.join(args.resume_from_path_critic), map_location=device)
+        resume_step = ckpt['step']
+        step = resume_step
+        episode = ckpt['episode']
         
     for step in tqdm(range(args.num_train_steps)):
         # evaluate agent periodically
@@ -418,7 +564,7 @@ def main(args):
             print("Eval begin step = {}".format(step))
             L.log('eval-number', episode, step)
             # print("Eval is happening")
-            avg_traj_returns_unseen, avg_upper_arm_ratios_unseen = evaluate(env, agent, video_dir, L, step, args)
+            avg_traj_returns_unseen, avg_upper_arm_ratios_unseen = evaluate(agent, video_dir, L, step, args)
             if avg_upper_arm_ratios_unseen > best_avg_upper_arm_ratios_unseen:
                 best_avg_upper_arm_ratios_unseen = avg_upper_arm_ratios_unseen
                 if args.use_wandb: wandb.log({'avg_upper_arm_ratios': avg_upper_arm_ratios_unseen, 'step': step})
@@ -441,7 +587,7 @@ def main(args):
 
 if __name__ == "__main__":
         
-    exp_prefix =  '2024-1124-pybullet-finetuning-simple'
+    exp_prefix =  '2024-1203-pybullet-from-scratch'
     load_variant_path = '/home/alexis/assistive-gym-fem/assistive_gym/envs/variant_real_world_final.json'
     loaded_vg = create_vg_from_json(load_variant_path)
     print("Loaded configs from ", load_variant_path)
@@ -452,7 +598,7 @@ if __name__ == "__main__":
 
     exp_count = 0
     timestamp = now.strftime('%m_%d_%H_%M_%S')
-    exp_name = "iql-training-p2-reward_model-7030-step140"
+    exp_name = "iql-training-from-scratch-reward_model1-only"
     print(exp_name)
     exp_name = "{}-{}-{:03}".format(exp_name, timestamp, exp_count)
     log_dir = '/scratch/alexis/data/' + exp_prefix + "/" + exp_name

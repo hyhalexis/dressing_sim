@@ -215,8 +215,11 @@ class AssistiveEnv(gym.Env):
                     start = 20 if self.policy == 2 else 30
 
                 if self.iteration >= start:
+                    # print('here1')
                     if self.arm_traj_idx == len(self.arm_traj) or self.arm_traj_idx < 0:
+                        print(self.arm_traj_idx, len(self.arm_traj))
                         continue
+                    # print('here2')
                     agent_joint_angles = self.arm_traj[self.arm_traj_idx]
                     curr_pos, curr_orient = self.human.get_pos_orient(18)
                     print('idx', self.arm_traj_idx, 'curr', curr_pos)
@@ -441,8 +444,7 @@ class AssistiveEnv(gym.Env):
         rgba, depth, segmentation_mask = self.get_camera_image_depth()
         self.step_img = rgba[..., :3]
         # image = Image.fromarray(rgba[..., :3], 'RGB')
-        # image.save('sim_imgs/new_image_{}_{}_{}_{}_{}.png'.format(self.garment, self.elastic_stiffness, self.damping_stiffness, self.all_direction, self.bending_stiffnes))
-        # import pdb;pdb.set_trace()
+        # image.save('/scratch/alexis/data/sim_imgs/p{}_{}_motion{}.png'.format(self.policy, self.garment, self.motion_id))
 
         rgba = rgba.reshape((-1, 4))
         depth = depth.flatten()

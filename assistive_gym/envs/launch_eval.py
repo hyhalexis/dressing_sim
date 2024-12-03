@@ -3,7 +3,7 @@ import torch
 import click
 import socket
 from chester.run_exp import run_experiment_lite, VariantGenerator
-from eval import run_task
+from eval_all import run_task
 import argparse
 # from env_viewer import viewer
 
@@ -31,10 +31,14 @@ def main(args):
         vg.add('actor_load_name', ['/home/alexis/assistive-gym-fem/assistive_gym/envs/ckpt/actor_1900106.pt'])
         vg.add('horizon', [250])
 
-    else:
+    elif args.policy == '2':
         vg.add('actor_load_name', ['/home/alexis/assistive-gym-fem/assistive_gym/envs/ckpt/actor_best_test_600023_0.65914.pt'])
         vg.add('horizon', [170])
 
+    elif args.policy == '0':
+        vg.add('actor_load_name', ['/home/alexis/assistive-gym-fem/assistive_gym/envs/ckpt_cam/actor_best_test_900043_0.64944.pt'])
+        vg.add('horizon', [200])
+ 
 
     vg.add('observation_mode', ['real_partial_pc'])
     # vg.add('observation_mode', ['pointcloud_3'])
@@ -150,7 +154,7 @@ if __name__ == '__main__':
         '--dry', action='store_true', 
     )
 
-    parser.add_argument('--policy', default=2, choices=['1', '2'])
+    parser.add_argument('--policy', default=2, choices=['0', '1', '2'])
     parser.add_argument('--camera_pos', default='side', choices=['front', 'side'])
 
     parser.add_argument('--motion_id', default=1)
