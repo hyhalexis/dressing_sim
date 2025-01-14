@@ -104,7 +104,7 @@ class PointCloudReplayBuffer():
         self.label_intersection_idxes = np.empty((capacity, 1), dtype=np.int64)
         self.non_randomized_obses = [_ for _ in range(self.capacity)]
         self.next_non_randomized_obses = [_ for _ in range(self.capacity)]
-        self.gripper_idx = 1
+        self.gripper_idx = args.gripper_idx
         self.idx = 0
         self.last_save = 0
         self.full = False
@@ -450,13 +450,13 @@ class PointCloudReplayBuffer():
         import pickle5 as pickle
         import random
         file_nos = os.listdir(data_dir)
+        # file_nos = random.sample(file_nos, len(file_nos) // 2)
         # file_nos.remove("videos")
         file_nos = sorted(file_nos)
-        file_nos = [file for file in file_nos if not file.endswith("0.0_0.0.pkl")]
+        # file_nos = [file for file in file_nos if not file.startswith("p2_")]
         file_nos = [os.path.join(data_dir, file_no) for file_no in file_nos]
-        sampled_files = random.sample(file_nos, min(200, len(file_nos)))
+        # sampled_files = random.sample(file_nos, min(200, len(file_nos)))
 
-        print(f"Total files to load (excluding '0.0.pkl'): {len(sampled_files)}")
 
         obses = []
         next_obses = []
@@ -464,41 +464,80 @@ class PointCloudReplayBuffer():
         rewards = []
         not_dones = []
         non_randomized_obses = []
+        forces = []
+        ori_obses = []
 
-        for file in tqdm(sampled_files, desc="Loading trajectory files"):
-            print("Loading file ", file)
-            with open(file, 'rb') as f:
-                traj = pickle.load(f)
+        for file in tqdm(file_nos, desc="Loading trajectory files"):
+            # print("Loading file ", file)
 
-            for i, transition in enumerate(traj):
+            # with open(file, 'rb') as f:
+            #     traj = pickle.load(f)
+
+            try:
+                with open(file, 'rb') as f:
+                    traj = pickle.load(f)
+                    # Process the loaded trajectory as needed
+                    print(f"Successfully loaded {file}")
+            except (pickle.UnpicklingError, EOFError) as e:
+                print(f"Skipping corrupted file: {file}. Error: {e}")
+            except Exception as e:
+                print(f"Unexpected error with file {file}: {e}")
+
+            for i in range(len(traj)):
                 # Add transition components directly to lists
-                obses.append(transition['obs'])
-                next_obses.append(transition['new_obs'])
+                transition = traj[i]
+                next_transition = traj[i+1] if i < len(traj)-1 else traj[i]
+
+                # obses.append(transition['obs'])
+                # next_obses.append(transition['new_obs'])
+
+                ori_obses.append(transition['obs'])
+
+                obs = copy.deepcopy(transition['complete_pts'])
+                obses.append(obs)
+
+                new_obs = copy.deepcopy(next_transition['complete_pts'])
+                # new_obs.x = torch.cat((new_obs.x, torch.zeros(new_obs.x.size(0), 1)), dim=1)
+                # new_obs.x[-1, 3] = next_transition['total_force']
+                next_obses.append(new_obs)
+
                 actions.append(transition['action'])
                 # flex_action = transition['action'][[1, 2, 0, 4, 5, 3]]
                 # actions.append(flex_action)
                 rewards.append(transition['reward'])
                 not_dones.append(1.0 if i < len(traj) - 1 else 0.0)  # Last transition gets not_done = 0
                 non_randomized_obses.append(None)
+                forces.append(transition['total_force'])
         
-        payload = [obses, next_obses, actions, rewards, not_dones, non_randomized_obses]
-        torch.save(payload, '/scratch/alexis/data/payload_1124_subset')
-
+        payload = [obses, next_obses, actions, rewards, not_dones, non_randomized_obses, forces, ori_obses]
+        torch.save(payload, '/scratch/alexis/data/payload_force_reconstr_one-hot')
 
     def load2(self, data_dir):
         # self.save_as_payload(data_dir)
-        payload = torch.load('/scratch/alexis/data/payload_1124')
+        payload = torch.load('/scratch/alexis/data/payload_force_reconstr_one-hot')
 
         # Convert lists to tensors
         self.obses = payload[0]
         self.next_obses = payload[1]
-        self.actions = [action.reshape(-1, 6) for action in payload[2]]
-        # actions_gripper = payload[2]
+        self.ori_actions = [action.reshape(-1, 6) for action in payload[2]]
+        temp = []
+        for idx in range(len(payload[2])):
+            obs_size = self.obses[idx].x.shape[0]
+            action = payload[2][idx].reshape(-1, 6)[-1]
+            actions = np.tile(action, (obs_size, 1))
+            temp.append(actions)
+        self.actions = temp
+        # self.actions = [action.reshape(-1, 6) for action in payload[2]]
         self.rewards = payload[3]
         self.not_dones = payload[4]
         self.non_randomized_obses = payload[5]
+        self.forces = payload[6]
+        self.ori_obses = payload[7]
+        
+        
 
         # temp = []
+        # actions_gripper = payload[2]
 
         # for idx in range(len(actions_gripper)):
         #     obs_size = self.obses[idx].x.shape[0]
@@ -548,7 +587,7 @@ class PointCloudReplayBuffer():
         #     self.buffer_start = end
     
     
-    def process(self,obs_1, act_1,device='cuda',debug=False):
+    def process(self, obs_1, act_1,device='cuda',debug=False):
         self.debug = debug
         if self.debug:
             print("process - Size of inputs as obs_1:", len(obs_1))
@@ -578,18 +617,30 @@ class PointCloudReplayBuffer():
             print("process - Size after making into concat act1:", act_1.shape)
             print("process - Batch size of obs1:", obs_1.batch)
         
+        gripper_idx = 2 # reward model idx
         for b_idx in obs_1.batch:
-            act_1[(obs_1.batch == b_idx)] = act_1[(obs_1.batch == b_idx) & (obs_1.x[:, self.gripper_idx] == 1)]
+            act_1[(obs_1.batch == b_idx)] = act_1[(obs_1.batch == b_idx) & (obs_1.x[:, gripper_idx] == 1)]
         return obs_1, act_1
     
     def relabel_rewards(self, reward_model1, reward_model2, device='cuda'):
         for i in tqdm(range(self.idx)):
-            obs, action, reward, done, next_obs = self.obses[i], self.actions[i], self.rewards[i], self.not_dones[i], self.next_obses[i]
-            obs = obs.to(device)
-            next_obs = next_obs.to(device)
-            obs, act = self.process([obs], [action], device=device)
+            obs, action, reward, done, next_obs, force, ori_obs, ori_action = self.obses[i], self.actions[i], self.rewards[i], self.not_dones[i], self.next_obses[i], self.forces[i], self.ori_obses[i], self.ori_actions[i]
+            # obs = ori_obs.to(device)
+            
+            # obs = obs.to(device)
+
+            obs_force = copy.deepcopy(ori_obs)
+            obs_force = obs_force.to(device)
+            obs_force.x = torch.cat((obs_force.x, torch.zeros(ori_obs.x.size(0), 1, device=device)), dim=1)
+            obs_force.x[-1, 3] = force
+            ori_obs = obs_force.to(device)
+
+            obs, act = self.process([ori_obs], [ori_action], device=device)
             reward = reward
             done = done
             with torch.no_grad():
-                reward_pref = self.reward1_w * reward_model1.r_hat(obs, act) + self.reward2_w * reward_model2.r_hat(obs, act)
+                if reward_model2 is None:  
+                    reward_pref = reward_model1.r_hat(obs, act)
+                else:
+                    reward_pref = self.reward1_w * reward_model1.r_hat(obs, act) + self.reward2_w * reward_model2.r_hat(obs, act)
             self.rewards_pref[i] = reward_pref

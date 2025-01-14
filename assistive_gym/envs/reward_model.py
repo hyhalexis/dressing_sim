@@ -2236,7 +2236,8 @@ class RewardModelVLM:
         file_list = os.listdir(data_dir)
         file_list = sorted(file_list)
         file_list = [os.path.join(data_dir, x) for x in file_list]
-        file_list = file_list[len(file_list)//3:(len(file_list)//3)*2]
+        file_list = file_list[:len(file_list)//3]
+        print(file_list)
         
         dict_1_list = []
         dict_2_list = []
@@ -2287,7 +2288,13 @@ class RewardModelVLM:
             # act_2 = copy.deepcopy(dict_2["action"][ind_2])
 
             obs_1 =  copy.deepcopy(dict_1["obs"])
+            obs_1.x = torch.cat((obs_1.x, torch.zeros(obs_1.x.size(0), 1)), dim=1)
+            obs_1.x[-1, 2] = copy.deepcopy(dict_1['total_force'])
+            
             obs_2 =  copy.deepcopy(dict_2["obs"])
+            obs_2.x = torch.cat((obs_2.x, torch.zeros(obs_2.x.size(0), 1)), dim=1)
+            obs_2.x[-1, 2] = copy.deepcopy(dict_2['total_force'])
+
             
             act_1 = copy.deepcopy(dict_1["action"])
             act_2 = copy.deepcopy(dict_2["action"])

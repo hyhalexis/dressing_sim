@@ -412,7 +412,7 @@ class SAC_AWACAgent(object):
         self.encoder_type = encoder_type
         self.agent = agent
 
-        self.gripper_idx = 2 if args.observation_mode == 'pointcloud_3' else 1
+        self.gripper_idx = args.gripper_idx
         self.alpha_fixed = alpha_fixed
 
         self.pc_encoder_names = ['pointcloud', 'pointcloud_flow']

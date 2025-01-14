@@ -110,7 +110,7 @@ def train_reward_model(args):
     # make directory for logging
     ts = time.gmtime()
     ts = time.strftime("%m-%d", ts)
-    args.pc_feature_dim = 2
+    args.pc_feature_dim = 4
     
     args.work_dir =logger.get_dir()
     print(args.work_dir)
@@ -126,7 +126,7 @@ def train_reward_model(args):
     action_shape = [6]
     obs_shape = (30000,)
   
-    data_dir = '/scratch/alexis/data/traj_data_labeled_new'  
+    data_dir = '/scratch/alexis/data/traj_data_with_force_one-hot/labeled'  
     reward_model = RewardModelVLM(obs_shape, action_shape, args, use_action=False)
     reward_model.add_data_from_cache(data_dir)
 
@@ -179,7 +179,7 @@ def train_reward_model(args):
     reward_model.save(model_save_dir, step, reward_learning_acc)
 
     
-exp_prefix = "11-21-reward-training" #'2024-0728-real-model-experiments'
+exp_prefix = "12-25-reward-training" #'2024-0728-real-model-experiments'
 load_variant_path = "/home/alexis/assistive-gym-fem/assistive_gym/envs/variant_reward_vlm.json"
 loaded_vg = create_vg_from_json(load_variant_path)
 print("Loaded configs from ", load_variant_path)
@@ -190,9 +190,9 @@ now = datetime.datetime.now(dateutil.tz.tzlocal())
 
 exp_count = 0
 timestamp = now.strftime('%m_%d_%H_%M_%S')
-exp_name = "first_pref reward_model_sim_training"
+exp_name = "reward_model_sim_training_with_force_one-hot"
 print(exp_name)
 exp_name = "{}-{}-{:03}".format(exp_name, timestamp, exp_count)
-log_dir = "data" + "/local/" + exp_prefix + "/" + exp_name
+log_dir = "/scratch/alexis/data/" + exp_prefix + "/" + exp_name
 
 run_task(vg, log_dir=log_dir, exp_name=exp_name)

@@ -285,7 +285,7 @@ def get_label(vlm_dict_list_1, vlm_dict_list_2, batch_number):
     gt_labels_2 = np.array(gt_labels_2).reshape(-1, 1)
     labels3 = np.array(labels3).reshape(-1, 1)
     gt_labels_3 = np.array(gt_labels_3).reshape(-1, 1)
-    save_path = '/scratch/alexis/data/traj_data_new_labeled2'
+    save_path = '/scratch/alexis/data/traj_data_with_force_one-hot/labeled'
     if not os.path.exists(save_path):
         os.makedirs(save_path)
     with open("{}/{}_{}.pkl".format(save_path, 'labels1', batch_number), "wb") as f:
@@ -380,6 +380,10 @@ def sample_v_dict(trajs, batch_size=4000):
 
         dict_1["line_points"] = traj[sample_index[0]]["line_points"]
         dict_2["line_points"] = traj[sample_index[1]]["line_points"]
+
+        dict_1["total_force"] = traj[sample_index[0]]["total_force"]
+        dict_2["total_force"] = traj[sample_index[1]]["total_force"]
+
         
         v_dict_list_1.append(dict_1)
         v_dict_list_2.append(dict_2)
@@ -387,7 +391,7 @@ def sample_v_dict(trajs, batch_size=4000):
    
     return v_dict_list_1, v_dict_list_2
 
-def train_reward_model(data_dir="/scratch/alexis/data/traj_data_new"): 
+def train_reward_model(data_dir="/scratch/alexis/data/traj_data_with_force_one-hot/trajs"): 
     
     
     utils.set_seed_everywhere(0)
@@ -401,6 +405,8 @@ def train_reward_model(data_dir="/scratch/alexis/data/traj_data_new"):
     data = {}
     
     file_nos = os.listdir(data_dir)
+    # file_nos = [file for file in file_nos if not file.endswith("0.0_0.0.pkl")]
+
     # file_nos.remove("videos")
     file_nos = sorted(file_nos)
     file_nos = [os.path.join(data_dir, file_no) for file_no in file_nos]

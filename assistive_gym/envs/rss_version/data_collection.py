@@ -18,17 +18,12 @@ import torch
 import wandb
 from chester.run_exp import run_experiment_lite, VariantGenerator
 
-from torch_geometric.data import Batch
-from reward_model import RewardModel3, RewardModelVLM
 from chester import logger
 import utils
-from default_config import DEFAULT_CONFIG
+from rss_version.default_config import DEFAULT_CONFIG
 from logger import Logger
-from pc_replay_buffer import PointCloudReplayBuffer
-from iql_pointcloud import IQLAgent
-from visualization import save_numpy_as_gif
 from dressing_envs import DressingSawyerHumanEnv
-from SAC_AWAC import SAC_AWACAgent
+from rss_version.SAC_AWAC import SAC_AWACAgent
 
 import multiprocessing as mp
 from multiprocessing import Pool
@@ -169,7 +164,14 @@ def evaluate(arg):
     agent, step, garment_id, motion_id, pose_id, args = arg
 
     def run_eval_loop():
-        env = DressingSawyerHumanEnv(policy=3, horizon=args.horizon, camera_pos=args.camera_pos, occlusion=args.occlusion, use_force=args.use_force, one_hot=args.one_hot, render=args.render, gif_path=args.gif_path)
+        start_time = time.time()
+        prefix = '_'
+        all_traj_returns_garments_poses = defaultdict(lambda: defaultdict(list))
+        # {region_num_0: {garment0: [pose0, pose1, ...], garment1: [...], ....., garment4: [...]}, ...., region_num_27: ...}
+        all_upperarm_ratio_garments_poses = defaultdict(lambda: defaultdict(list))
+
+        cnt = 0
+        env = DressingSawyerHumanEnv(policy=3, horizon=args.horizon, camera_pos=args.camera_pos, occlusion=args.occlusion, use_force=args.use_force, render=args.render, gif_path=args.gif_path)
 
         obs = env.reset(garment_id=garment_id, motion_id=motion_id, pose_id=pose_id, step_idx = step)
         done = False
@@ -229,10 +231,7 @@ def evaluate(arg):
                 'line_points': env.step_line_pts,
                 'robot_force': env.robot_force_on_human,
                 'cloth_force': env.cloth_force_sum,
-                'cloth_force_vector': env.cloth_force_vector,
-                'total_force': env.total_force_on_human,
-                'distort_arm_pc': env.distort_arm_pc,
-                'complete_pts': env.complete_data
+                'total_force': env.total_force_on_human
             }
             
             traj_dataset.append(step_data)
@@ -304,12 +303,6 @@ def main(args):
     
     print('Horizon', args.horizon)
     print('Occlusion?', args.occlusion)
-    print('One-hot?', args.one_hot)
-
-    if args.one_hot:
-        args.pc_feature_dim = 3
-    else:
-        args.pc_feature_dim = 2
 
     # make directory for logging
     ts = time.gmtime()
@@ -320,9 +313,12 @@ def main(args):
     device = 'cuda:0'
     action_shape = (6,)
     obs_shape = (30000,)
-        
+    
+    # folder_path = "/scratch/alexis/data/2024-1205-pybullet-finetuning/iql-training-p1-reward_model1-only-12_05_07_16_53-000/model"
+    folder_path = "/scratch/alexis/data/2024-1205-pybullet-finetuning/iql-training-p2-reward_model1-only-12_05_05_50_38-000/model"
+    
      # Note
-    dir = '/scratch/alexis/data/traj_data_with_one-hot_force_reconstr'
+    dir = '/scratch/alexis/data/traj_data_with_force_one-hot'
 
     args.traj_dir = '{}/trajs'.format(dir)
     if not os.path.exists(args.traj_dir):
@@ -336,6 +332,20 @@ def main(args):
     os.makedirs(gif_path, exist_ok=True)
     print('Saving gifs at: ', gif_path)
     args.gif_path = gif_path
+    import re
+        # Regular expression pattern to match 'actor_xxx.pt' where xxx is a number
+    filename_pattern = re.compile(r"actor_(\d+)\.pt$")
+
+    # # List to store the matching filenames
+    # lst = [30000, 40000, 50000, 60000, 110000, 140000, 150000, 160000, 170000, 190000, 210000, 220000]
+
+    agents = []
+
+    # Iterate through all files in the folder
+    for filename in os.listdir(folder_path):
+        if filename_pattern.match(filename) and int(filename_pattern.match(filename).group(1)) > 70000:  # If the filename matches the pattern
+            agents.append(filename)
+    agents.sort(key=lambda x: int(filename_pattern.match(x).group(1)))
 
     agents_ckpts = [
                     # "/home/alexis/assistive-gym-fem/assistive_gym/envs/ckpt/actor_1900106.pt",
@@ -378,9 +388,9 @@ def main(args):
     pairs = [(a, s, x, y, -1) for a, s in agents for x in garment_ids for y in motion_ids]
 
     # Note
-    print('num pairs', int(len(pairs)))
+    print('Num pairs', int(len(pairs)))
 
-    for _ in range(10):
+    for _ in range(20):
         parallel_evaluator = ParallelEvaluator(num_workers=int(len(pairs)))
         dressed_ratios = parallel_evaluator.evaluate_agents(pairs, args)
         parallel_evaluator.close()
@@ -389,8 +399,8 @@ def main(args):
 if __name__ == "__main__":
     mp.set_start_method('spawn', force=True)
         
-    exp_prefix =  '2025-0110-pybullet-eval-ckpt'
-    load_variant_path = '/home/alexis/assistive-gym-fem/assistive_gym/envs/variant.json'
+    exp_prefix =  '2024-1224-pybullet-eval-ckpt'
+    load_variant_path = '/home/alexis/assistive-gym-fem/assistive_gym/envs/rss_version/variant_rss.json'
     loaded_vg = create_vg_from_json(load_variant_path)
     print("Loaded configs from ", load_variant_path)
     vg = loaded_vg
@@ -400,7 +410,7 @@ if __name__ == "__main__":
 
     exp_count = 0
     timestamp = now.strftime('%m_%d_%H_%M_%S')
-    exp_name = "data_collection_one-hot_reconstr_force"
+    exp_name = "data_collection"
     # exp_name = "iql-training-p1-reward_model1-only_eval-t6"
 
     print(exp_name)

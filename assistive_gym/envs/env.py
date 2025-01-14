@@ -9,15 +9,13 @@ from keras.models import load_model
 
 from util import Util
 from human_creation import HumanCreation
-from agents import agent, human, robot, panda, tool, furniture
+from agents import agent, human, robot
 from agents.agent import Agent
 from agents.human import Human
 from agents.robot import Robot
-from agents.panda import Panda
 from agents.tool import Tool
 from agents.furniture import Furniture
 from scipy.spatial.transform import Rotation as R
-from utils import quaternion_to_matrix, axis_angle_to_quaternion, rotation_matrix_to_euler_angles, rotation_matrix_to_quaternion
 
 class AssistiveEnv(gym.Env):
     def __init__(self, robot=None, human=None, task='', obs_robot_len=0, obs_human_len=0, time_step=0.02, frame_skip=5, render=False, gravity=-9.81, seed=1001, deformable=False):
@@ -196,7 +194,6 @@ class AssistiveEnv(gym.Env):
         # actions *= action_multiplier
         for i, agent in enumerate(self.agents):
             # Append the new action to the current measured joint angles
-            agent_joint_angles = agent.get_joint_angles(agent.controllable_joint_indices)
             if not ik or isinstance(agent, Human):
                 # continue
                 # Update the target robot/human joint angles based on the proposed action and joint limits
@@ -268,7 +265,7 @@ class AssistiveEnv(gym.Env):
                 new_ee_R = rotation_R * ee_cur_R
                 new_ee_quat = new_ee_R.as_quat()
 
-              # print(“time step {} executing translation {} axis angle {} rotation degree {}“.format(t, translation, axis_angle, rotation_angle_deg))
+              # print(time step {} executing translation {} axis angle {} rotation degree {}â€œ.format(t, translation, axis_angle, rotation_angle_deg))
                 # orient += action[len(pos):]
 
                 # mimic real world implementaiton
@@ -283,20 +280,47 @@ class AssistiveEnv(gym.Env):
 
                 # new_rot = self.get_quaternion(self.get_euler(orient) + actions[len(pos):]) # NOTE: RPY
                 # agent_joint_angles = agent.ik(joint, new_pos, orient, ik_indices, max_iterations=200, use_current_as_rest=True)
-
-                agent_joint_angles = agent.ik(joint, pos, new_ee_quat, ik_indices, max_iterations=200, use_current_as_rest=True)
-            # if isinstance(agent, Robot) and agent.action_duplication is not None:
-            #     agent_joint_angles = np.concatenate([[a]*d for a, d in zip(agent_joint_angles, self.robot.action_duplication)])
-            #     agent.control(agent.all_controllable_joints, agent_joint_angles, agent.gains, agent.forces)
-            
-            # else:
-                # for _ in range(10):
-                agent.control(agent.controllable_joint_indices, agent_joint_angles, gains[i], forces[i])
                 # curr_joint_angles = agent.get_joint_angles(agent.controllable_joint_indices)
-                    # err = np.linalg.norm(curr_joint_angles - agent_joint_angles)
-                    # print('err', err)
-                    # if err < 1e-4:
-                    #     break
+                agent_joint_angles = agent.ik(joint, pos, new_ee_quat, ik_indices, max_iterations=200, use_current_as_rest=True)
+
+                # for j in range(len(agent_joint_angles)):
+                #     p.resetJointState(agent.body, agent.controllable_joint_indices[j], agent_joint_angles[j])
+
+                # fk_state = p.getLinkState(agent.body, agent.right_end_effector, computeForwardKinematics=True)
+                # fk_position = fk_state[4]
+                # position_error = np.linalg.norm(np.array(pos) - np.array(fk_position))
+                # # print('error', position_error, 'pos', fk_position, pos)
+                # # joint_error0 = np.linalg.norm(np.array(curr_joint_angles) - np.array(agent_joint_angles))
+                # print('error0', position_error)
+                # self.error_lst[0].append(position_error)
+
+                # for j in range(len(curr_joint_angles)):
+                #     p.resetJointState(agent.body, agent.controllable_joint_indices[j], curr_joint_angles[j])
+
+
+                agent.control(agent.controllable_joint_indices, agent_joint_angles, gains[i], forces[i])
+                
+                # iter = 0
+                # while iter <= 30:
+                #     agent.control(agent.controllable_joint_indices, agent_joint_angles, gains[i], forces[i])
+                #     # new_joint_angles = agent.get_joint_angles(agent.controllable_joint_indices)
+                #     # joint_error1 = np.linalg.norm(np.array(agent_joint_angles) - np.array(new_joint_angles))
+                #     # self.error_lst[1].append(joint_error1)
+                #     # print('error', position_error)
+
+                #     curr_joint_angles = agent.get_joint_angles(agent.controllable_joint_indices)
+                #     err = np.linalg.norm(curr_joint_angles - agent_joint_angles)
+                #     print('err', err)
+                #     if err < 1e-3:
+                #         break
+                #     p.stepSimulation(physicsClientId=self.id)
+                #     iter += 1
+                
+                # new_state = p.getLinkState(agent.body, agent.right_end_effector, computeForwardKinematics=True)
+                # new_position = new_state[4]
+                # position_error = np.linalg.norm(np.array(pos) - np.array(new_position))
+                # self.error_lst[1].append(position_error)
+
                 
         if step_sim:
             # Update all agent positions
@@ -311,6 +335,16 @@ class AssistiveEnv(gym.Env):
                 if self.gui:
                     # Slow down time so that the simulation matches real time
                     self.slow_time()
+        
+        # for agent in self.agents:
+        #     if isinstance(agent, Robot):
+        #         new_state = p.getLinkState(agent.body, agent.right_end_effector, computeForwardKinematics=True)
+        #         new_position = new_state[4]
+        #         position_error = np.linalg.norm(np.array(fk_position) - np.array(new_position))
+        #         self.error_lst[1].append(position_error)
+        #         print('error1', position_error)
+
+        
 
     def human_preferences(self, end_effector_velocity=0, total_force_on_human=0, tool_force_at_target=0, food_hit_human_reward=0, food_mouth_velocities=[], dressing_forces=[[]], arm_manipulation_tool_forces_on_human=[0, 0], arm_manipulation_total_force_on_human=0):
         # Slow end effector velocities
@@ -443,8 +477,10 @@ class AssistiveEnv(gym.Env):
         # get a depth image
         rgba, depth, segmentation_mask = self.get_camera_image_depth()
         self.step_img = rgba[..., :3]
-        # image = Image.fromarray(rgba[..., :3], 'RGB')
-        # image.save('/scratch/alexis/data/sim_imgs/p{}_{}_motion{}.png'.format(self.policy, self.garment, self.motion_id))
+        image = Image.fromarray(rgba[..., :3], 'RGB')
+        # image.show()
+        # if self.iteration % 20 == 0:
+        #     image.save('side_imgs/p{}_{}_motion{}_{}.png'.format(self.policy, self.garment, self.motion_id, self.iteration))
 
         rgba = rgba.reshape((-1, 4))
         depth = depth.flatten()
@@ -541,4 +577,5 @@ class AssistiveEnv(gym.Env):
         agent = Agent()
         agent.init(body, self.id, self.np_random, indices=-1)
         return agent
+
 

@@ -126,7 +126,7 @@ def run_task(vv, log_dir=None, exp_name=None):
                 log_dir = vv.variants()[-1]['resume_from_exp_path_p1_5050']
 
             elif vv.variants()[-1]['r1_w'] == 1.0:
-                 log_dir = vv.variants()[-1]['resume_from_exp_path_p1_100'] + '_fixed'
+                 log_dir = vv.variants()[-1]['resume_from_exp_path_p1_100']
 
         elif vv.variants()[-1]['policy'] == 2:
             if vv.variants()[-1]['r1_w'] == 0.7:
@@ -196,12 +196,6 @@ def evaluate(arg):
     agent, dir, step, args = arg
     L = Logger(dir, use_tb=args.save_tb, chester_logger=logger)
 
-    factor = args.save_gif_factor
-    if step >= args.saving_gif_start and (step // args.eval_freq) % factor == 0:
-        imsize = 720
-    gif_path = '{}/gifs'.format(dir)
-    os.makedirs(gif_path, exist_ok=True)
-    print('Saving gifs at: ', gif_path)
     wandb.init()
 
     def run_eval_loop(sample_stochastically=True):
@@ -212,9 +206,6 @@ def evaluate(arg):
         all_upperarm_ratio_garments_poses = defaultdict(lambda: defaultdict(list))
 
         # breakpoint()
-        gif_saved = False
-        if step >= args.saving_gif_start and (step // args.eval_freq) % factor == 0 and not gif_saved:
-            plt.figure()
 
         cnt = 0
         garment_ids = [1, 2]
@@ -225,7 +216,7 @@ def evaluate(arg):
         for garment_id in garment_ids:
 
             for motion_id in motion_ids:
-                env = DressingSawyerHumanEnv(policy=args.policy, horizon=args.horizon, camera_pos=args.camera_pos, rand=args.rand, render=args.render, gif_path=gif_path)
+                env = DressingSawyerHumanEnv(policy=args.policy, horizon=args.horizon, camera_pos=args.camera_pos, rand=args.rand, render=args.render, gif_path=args.gif_path)
 
                 obs = env.reset(garment_id=garment_id, motion_id=motion_id, step_idx = step)
                 done = False
@@ -296,16 +287,16 @@ def evaluate(arg):
 
                 all_traj_returns_garments_poses[garment_id][motion_id].append(episode_reward)
                 all_upperarm_ratio_garments_poses[garment_id][motion_id].append(info['upperarm_ratio'])
-                L.log('eval_new/garmemt{}_motion{}_episode_reward'.format(garment_id, motion_id), episode_reward, step)
+                L.log('eval/garmemt{}_motion{}_episode_reward'.format(garment_id, motion_id), episode_reward, step)
                 if args.use_wandb: 
                     wandb.log({'garmemt{}_motion{}_episode_reward'.format(garment_id, motion_id): episode_reward, 'step': step})
                     wandb.log({'garmemt{}_motion{}_episode_dressed_ratio'.format(garment_id, motion_id): info['upperarm_ratio'], 'step': step})
 
-                # L.log('eval_new/garmemt{}_motion{}_info_'.format(garment_id, motion_id) + key, val, step)
+                # L.log('eval/garmemt{}_motion{}_info_'.format(garment_id, motion_id) + key, val, step)
 
 
                 # for key, val in get_info_stats([ep_info]).items():
-                #     L.log('eval_new/garmemt{}_motion{}_info_'.format(garment_id, motion_id) + key, val, step)
+                #     L.log('eval/garmemt{}_motion{}_info_'.format(garment_id, motion_id) + key, val, step)
 
                 cnt += 1
 
@@ -315,7 +306,7 @@ def evaluate(arg):
         #     plt.close("all")
 
         eval_time = time.time() - start_time
-        L.log('eval_new/' + prefix + 'wallclock_time', np.mean(eval_time), step)
+        L.log('eval/' + prefix + 'wallclock_time', np.mean(eval_time), step)
 
         garment_reward_means = []
         garment_upperarm_ratio_means = []
@@ -343,10 +334,10 @@ def evaluate(arg):
 
             mean_ep_reward, best_ep_reward = np.mean(all_traj_returns_all_poses), np.max(all_traj_returns_all_poses)
             mean_upperarm_ratio, best_upperarm_ratio = np.mean(all_upperarm_ratio_all_poses), np.max(all_upperarm_ratio_all_poses)
-            L.log('eval_new/' + prefix + 'mean_episode_reward', mean_ep_reward, step)
-            L.log('eval_new/' + prefix + 'best_episode_reward', best_ep_reward, step)
-            L.log('eval_new/' + prefix + 'mean_upperarm_ratio', mean_upperarm_ratio, step)
-            L.log('eval_new/' + prefix + 'best_upperarm_ratio', best_upperarm_ratio, step)
+            L.log('eval/' + prefix + 'mean_episode_reward', mean_ep_reward, step)
+            L.log('eval/' + prefix + 'best_episode_reward', best_ep_reward, step)
+            L.log('eval/' + prefix + 'mean_upperarm_ratio', mean_upperarm_ratio, step)
+            L.log('eval/' + prefix + 'best_upperarm_ratio', best_upperarm_ratio, step)
 
             if args.use_wandb: 
                 wandb.log({'motion{}_mean_ep_reward'.format(motion_id): mean_ep_reward, 'step': step})
@@ -382,10 +373,10 @@ def evaluate(arg):
 
             mean_ep_reward, best_ep_reward = np.mean(all_traj_returns_all_poses), np.max(all_traj_returns_all_poses)
             mean_upperarm_ratio, best_upperarm_ratio = np.mean(all_upperarm_ratio_all_poses), np.max(all_upperarm_ratio_all_poses)
-            L.log('eval_new/' + prefix + 'mean_episode_reward', mean_ep_reward, step)
-            L.log('eval_new/' + prefix + 'best_episode_reward', best_ep_reward, step)
-            L.log('eval_new/' + prefix + 'mean_upperarm_ratio', mean_upperarm_ratio, step)
-            L.log('eval_new/' + prefix + 'best_upperarm_ratio', best_upperarm_ratio, step)
+            L.log('eval/' + prefix + 'mean_episode_reward', mean_ep_reward, step)
+            L.log('eval/' + prefix + 'best_episode_reward', best_ep_reward, step)
+            L.log('eval/' + prefix + 'mean_upperarm_ratio', mean_upperarm_ratio, step)
+            L.log('eval/' + prefix + 'best_upperarm_ratio', best_upperarm_ratio, step)
 
             if args.use_wandb: 
                 wandb.log({'motion{}_mean_ep_reward'.format(garment_id): mean_ep_reward, 'step': step})
@@ -397,8 +388,8 @@ def evaluate(arg):
             
         mean_ep_reward = np.mean(garment_reward_means)
         mean_upperarm_ratio = np.mean(garment_upperarm_ratio_means)
-        L.log('eval_new/mean_episode_reward', mean_ep_reward, step)
-        L.log('eval_new/mean_upperarm_ratio', mean_upperarm_ratio, step)
+        L.log('eval/mean_episode_reward', mean_ep_reward, step)
+        L.log('eval/mean_upperarm_ratio', mean_upperarm_ratio, step)
 
         if args.use_wandb: 
             wandb.log({'mean_episode_reward': mean_ep_reward, 'step': step})
@@ -452,6 +443,7 @@ def make_agent(obs_shape, action_shape, args, device, agent="IQL"):
     )
 
 def main(args):
+    import re
     mp.set_start_method('forkserver', force=True)
     if args.seed == -1:
         args.__dict__["seed"] = np.random.randint(1, 1000000)
@@ -461,59 +453,56 @@ def main(args):
     if args.policy == 1:
         args.horizon = 250
     elif args.policy == 2:
-        args.horizon == 170
+        args.horizon == 250
     else:
-        args.horizon = 200
+        args.horizon = 250
     
-    print('horizon', args.horizon)
+    print('Horizon', args.horizon)
 
     # env = DressingSawyerHumanEnv(policy=args.policy, horizon=args.horizon, camera_pos=args.camera_pos, rand=args.rand, render=args.render, path_suffix=int(args.r1_w*10))
-    gif_path = '{}/gifs'.format(logger.get_dir())
-    os.makedirs(gif_path, exist_ok=True)
-    print('Saving gifs at: ', gif_path)
-
 
     # make directory for logging
     ts = time.gmtime()
     ts = time.strftime("%m-%d", ts)
     dataset_dir = args.dataset_dir
     args.work_dir = logger.get_dir()
-    args.gif_path = gif_path
 
     # create replay buffer
     # device = torch.device('cuda:{}'.format(args.cuda_idx) if torch.cuda.is_available() else 'cpu')
     device = 'cuda:0'
     action_shape = (6,)
     obs_shape = (30000,)    
-
-    # agents_ckpts = ["/scratch/alexis/data/2024-1128-pybullet-finetuning-simple/iql-training-p1-reward_model1+2-7030-11_29_02_15_47-000/model/actor_10000.pt",
-    #           "/scratch/alexis/data/2024-1128-pybullet-finetuning-simple/iql-training-p1-reward_model1+2-7030-11_29_02_15_47-000/model/actor_20000.pt",
-    #           "/scratch/alexis/data/2024-1128-pybullet-finetuning-simple/iql-training-p1-reward_model1+2-7030-11_29_02_15_47-000/model/actor_30000.pt",
-    #           "/scratch/alexis/data/2024-1128-pybullet-finetuning-simple/iql-training-p1-reward_model1+2-7030-11_29_02_15_47-000/model/actor_40000.pt",
-    #           "/scratch/alexis/data/2024-1128-pybullet-finetuning-simple/iql-training-p1-reward_model1+2-7030-11_29_02_15_47-000/model/actor_50000.pt",
-    #           "/scratch/alexis/data/2024-1128-pybullet-finetuning-simple/iql-training-p1-reward_model1+2-7030-11_29_02_15_47-000/model/actor_60000.pt",
-    #           "/scratch/alexis/data/2024-1128-pybullet-finetuning-simple/iql-training-p1-reward_model1+2-7030-11_29_02_15_47-000/model/actor_70000.pt",
-    #           "/scratch/alexis/data/2024-1128-pybullet-finetuning-simple/iql-training-p1-reward_model1+2-7030-11_29_02_15_47-000/model/actor_80000.pt",
-    #           "/scratch/alexis/data/2024-1128-pybullet-finetuning-simple/iql-training-p1-reward_model1+2-7030-11_29_02_15_47-000/model/actor_90000.pt",
-    #           "/scratch/alexis/data/2024-1128-pybullet-finetuning-simple/iql-training-p1-reward_model1+2-7030-11_29_02_15_47-000/model/actor_100000.pt"
-    #           ""
-    #           ]
-
-    agents_ckpts = ["/scratch/alexis/data/2024-1128-pybullet-finetuning-simple/iql-training-p1-reward_model1+2-5050-11_29_02_20_06-000/model/actor_10000.pt",
-            "/scratch/alexis/data/2024-1128-pybullet-finetuning-simple/iql-training-p1-reward_model1+2-5050-11_29_02_20_06-000/model/actor_20000.pt",
-            "/scratch/alexis/data/2024-1128-pybullet-finetuning-simple/iql-training-p1-reward_model1+2-5050-11_29_02_20_06-000/model/actor_30000.pt",
-            "/scratch/alexis/data/2024-1128-pybullet-finetuning-simple/iql-training-p1-reward_model1+2-5050-11_29_02_20_06-000/model/actor_40000.pt",
-            "/scratch/alexis/data/2024-1128-pybullet-finetuning-simple/iql-training-p1-reward_model1+2-5050-11_29_02_20_06-000/model/actor_50000.pt",
-            "/scratch/alexis/data/2024-1128-pybullet-finetuning-simple/iql-training-p1-reward_model1+2-5050-11_29_02_20_06-000/model/actor_60000.pt",
-            "/scratch/alexis/data/2024-1128-pybullet-finetuning-simple/iql-training-p1-reward_model1+2-5050-11_29_02_20_06-000/model/actor_70000.pt",
-            "/scratch/alexis/data/2024-1128-pybullet-finetuning-simple/iql-training-p1-reward_model1+2-5050-11_29_02_20_06-000/model/actor_80000.pt",
-            "/scratch/alexis/data/2024-1128-pybullet-finetuning-simple/iql-training-p1-reward_model1+2-5050-11_29_02_20_06-000/model/actor_90000.pt",
-            "/scratch/alexis/data/2024-1128-pybullet-finetuning-simple/iql-training-p1-reward_model1+2-5050-11_29_02_20_06-000/model/actor_100000.pt",
-            "/scratch/alexis/data/2024-1128-pybullet-finetuning-simple/iql-training-p1-reward_model1+2-5050-11_29_02_20_06-000/model/actor_110000.pt",
-            "/scratch/alexis/data/2024-1128-pybullet-finetuning-simple/iql-training-p1-reward_model1+2-5050-11_29_02_20_06-000/model/actor_120000.pt",
-            "/scratch/alexis/data/2024-1128-pybullet-finetuning-simple/iql-training-p1-reward_model1+2-5050-11_29_02_20_06-000/model/actor_130000.pt"
-            ]
+     
+    # folder_path = "/scratch/alexis/data/2024-1205-pybullet-finetuning/iql-training-p1-reward_model1-only-12_05_07_16_53-000/model"
+    folder_path = "/scratch/alexis/data/2024-1205-pybullet-finetuning/iql-training-p2-reward_model1-only-12_05_05_50_38-000/model"
+    dir = os.path.dirname(folder_path)
     
+    gif_path = '{}/gifs_new'.format(dir)
+    os.makedirs(gif_path, exist_ok=True)
+    print('Saving gifs at: ', gif_path)
+    args.gif_path = gif_path
+
+    # Regular expression pattern to match 'actor_xxx.pt' where xxx is a number
+    filename_pattern = re.compile(r"actor_(\d+)\.pt$")
+
+    # List to store the matching filenames
+    agents = []
+
+    lst = [50000, 90000, 100000, 110000, 120000, 130000, 140000, 170000, 190000, 210000, 230000, 240000]
+
+    # Iterate through all files in the folder
+    for filename in os.listdir(folder_path):
+        if filename_pattern.match(filename) and int(filename_pattern.match(filename).group(1)) in lst:  # If the filename matches the pattern
+            agents.append(filename)
+    agents.sort(key=lambda x: int(filename_pattern.match(x).group(1)))
+
+    agents_ckpts = []
+
+    for agent in agents:
+        agents_ckpts.append(os.path.join(folder_path, agent))
+    
+    print(agents_ckpts)
+         
     agents = []
     import re
     
@@ -529,8 +518,8 @@ def main(args):
         if match:
             step = int(match.group(1))
         
-        dir = os.path.dirname(os.path.dirname(ckpt))
         agents.append((agent, dir, step))
+    print('Numer agents', len(agents))
 
     parallel_evaluator = ParallelEvaluator(num_workers=len(agents))
     parallel_evaluator.evaluate_agents(agents, args)

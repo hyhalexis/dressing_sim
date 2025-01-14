@@ -10,14 +10,17 @@ from garment_idx_utils import *
 from PIL import Image
 import open3d as o3d
 from torch_geometric.data import Data
-from utils import voxelize_pc, show_line_and_triangle, line_intersecting_triangle
+from utils import voxelize_pc, show_line_and_triangle, line_intersecting_triangle, filter_points, to_model_axes, distort_arm_pc, create_axes
 import imageio
 import scipy
 import pickle
+from scipy.spatial.transform import Rotation as R
+
+import copy
 
 class DressingEnv(AssistiveEnv):
-    def __init__(self, robot, human, use_ik=True, policy=2, horizon=150, camera_pos = 'side', rand=False, render=False, gif_path=None):
-    # def __init__(self, robot, human, use_ik=True, policy=2, horizon=150, motion=1, garment=1, camera_pos = 'side', rand=False, render=False):
+    def __init__(self, robot, human, use_ik=True, policy=2, horizon=150, camera_pos = 'side', occlusion = True, render=False, one_hot = False, reconstruct = False, gif_path=None, use_force=False, elbow_rand=-90, shoulder_rand=80):
+    # def __init__(self, robot, human, use_ik=True, policy=2, horizon=150, motion=1, garment=1, camera_pos = 'side', render=False):
         super(DressingEnv, self).__init__(robot=robot, human=human, task='dressing', obs_robot_len=(16 + len(robot.controllable_joint_indices) - (len(robot.wheel_joint_indices) if robot.mobile else 0)), obs_human_len=(16 + (len(human.controllable_joint_indices) if human is not None else 0)), frame_skip=1, time_step=0.02, deformable=True, render=render)
         self.use_ik = use_ik
         self.use_mesh = (human is None)
@@ -31,7 +34,6 @@ class DressingEnv(AssistiveEnv):
         self.horizon = horizon
         self.policy = int(policy)
         self.camera_pos = camera_pos
-        self.rand = int(rand)
 
         self.upper_w = 5
         self.task_w = 1
@@ -66,8 +68,20 @@ class DressingEnv(AssistiveEnv):
         self.line1_extend_factor = 0.1
 
         self.images = []
-        self.pc_images = []
+        self.force_lst = []
         self.gif_path = gif_path
+
+        self.poses_lst = []
+        self.occlusion = occlusion
+        self.img_with_force = []
+        self.error_lst = [[],[]]
+        self.use_force = use_force
+        self.one_hot = one_hot
+        self.reconstruct = reconstruct
+
+        self.elbow_rand = elbow_rand
+        self.shoulder_rand = shoulder_rand
+
 
         # 1 skip, 0.1 step, 50 substep, springElasticStiffness=100 # ? FPS
         # 1 skip, 0.1 step, 20 substep, springElasticStiffness=10 # 4.75 FPS
@@ -89,6 +103,7 @@ class DressingEnv(AssistiveEnv):
             forces_temp.append(f)
             contact_positions_temp.append(c)
         self.cloth_forces = np.array(forces_temp)
+        self.cloth_force_vector = np.sum(self.cloth_forces, axis=0)
 
         cloth_shoulder_polygon_particle_pos = mesh_points[self.shoulder_polygon_indices]
 
@@ -139,7 +154,7 @@ class DressingEnv(AssistiveEnv):
         upper_arm_distances = []
         intersection_points = []
         for triangle_idx in self.reward_triangle_idxes:
-            intersect_line2, intersect_point2 = line_intersecting_triangle(line2_ori - line2_dir * 0.05, line2_dir, 
+            intersect_line2, intersect_point2 = line_intersecting_triangle(line2_ori - line2_dir * 0.1, line2_dir, 
                 mesh_points[triangle_idx[0]], mesh_points[triangle_idx[1]], mesh_points[triangle_idx[2]])
             if intersect_line2:
                 vec2 = intersect_point2 - line1_ori
@@ -147,7 +162,7 @@ class DressingEnv(AssistiveEnv):
                 if on_upper_arm_sign >= 0: # cloth pulled on upperarm
                     string = "sleeve enter upperarm"
                     on_upperarm = True
-                    self.forearm_distance = np.linalg.norm(line_points[1] - line_points[0])
+                    self.forearm_distance = np.linalg.norm(line_points[1] - line_points[0]) + self.human.hand_radius
                     forward_distance = self.forearm_distance + \
                         self.upper_w * np.linalg.norm(vec2)
                     self.upperarm_distance = np.linalg.norm(vec2)
@@ -258,7 +273,6 @@ class DressingEnv(AssistiveEnv):
 
         # collision_points = p.getClosestPoints(bodyA=self.robot, bodyB=self.human, distance=0.02)
     
-
         min_distances_kd_tree, _ = self.collision_kd_tree.query(new_ee_pos, workers=8)
         # min_distances_kd_tree_ori, _ = self.collision_kd_tree.query(end_effector_pos, workers=8)
 
@@ -280,14 +294,30 @@ class DressingEnv(AssistiveEnv):
 
         obs = self._get_obs()
         reward = self.compute_reward()
-        done = self.iteration >= self.horizon
-        if done:
-            imageio.mimsave('{}/p{}_motion{}_{}_{}_step{}_{}_{}.gif'.format(self.gif_path, self.policy, self.motion_id, self.camera_pos, self.garment, self.step_idx, (self.upperarm_distance + self.forearm_distance) / (self.upper_arm_length + self.forearm_length), self.upperarm_distance / self.upper_arm_length), self.images, format='GIF', duration=30)
-
-            # imageio.mimsave('{}/p{}_motion{}_{}_{}_step{}_{}_{}.gif'.format(self.gif_path, self.policy, self.motion_id, self.camera_pos, self.garment, self.step_idx, (self.upperarm_distance + self.forearm_distance) / (self.upper_arm_length + self.forearm_length), self.upperarm_distance / self.upper_arm_length), self.images, format='GIF', duration=30)
-            # imageio.mimsave('simulation_pc.gif', self.pc_images, format='GIF', duration=30)
-
         info = self._get_info()
+        done = self.iteration >= self.horizon or info['upperarm_ratio'] > 0.99
+
+        if done:
+            # plt.figure(1)
+            # plt.plot(self.error_lst[0])
+            # plt.title('IK Error close_multi')
+            # plt.savefig('sim_imgs/ik_close_multi.png')
+
+            # # Create the second figure
+            # plt.figure(2)
+            # plt.plot(self.error_lst[1])
+            # plt.title('Execution Error close_multi')
+            # plt.savefig('sim_imgs/exec_close_multi.png')
+            # plt.close('all')
+            # print('view: ', self.view_matrix)
+            # print('proj: ', self.projection_matrix)
+   
+            # imageio.mimsave('sim_gifs/up_p{}_motion{}_{}_{}_step{}_{}_{}.gif'.format(self.policy, self.motion_id, self.camera_pos, self.garment, self.step_idx, (self.upperarm_distance + self.forearm_distance) / (self.upper_arm_length + self.forearm_length), self.upperarm_distance / self.upper_arm_length), self.img_with_force, format='GIF', duration=30)
+            # imageio.mimsave('{}/pose{}_{}_{}_step{}_{}_{}.gif'.format(self.gif_path, self.pose_id, self.camera_pos, self.garment, self.step_idx, (self.upperarm_distance + self.forearm_distance) / (self.upper_arm_length + self.forearm_length), self.upperarm_distance / self.upper_arm_length), self.images, format='GIF', duration=30)
+
+            imageio.mimsave('{}/p{}_motion{}_{}_{}_step{}_e{}_s{}_force{}_{}_{}.gif'.format(self.gif_path, self.policy, self.motion_id, self.camera_pos, self.garment, self.step_idx, self.elbow_rand, self.shoulder_rand, self.use_force, (self.upperarm_distance + self.forearm_distance) / (self.upper_arm_length + self.forearm_length), self.upperarm_distance / self.upper_arm_length), self.img_with_force, format='GIF', duration=30)
+            # imageio.mimsave('{}/p{}_motion{}_{}_{}_e{}_s{}_{}_{}.gif'.format(self.gif_path, self.policy, self.motion_id, self.camera_pos, self.garment, self.elbow_rand, self.shoulder_rand, (self.upperarm_distance + self.forearm_distance) / (self.upper_arm_length + self.forearm_length), self.upperarm_distance / self.upper_arm_length), self.images, format='GIF', duration=30)
+            # imageio.mimsave('sim_gifs/test_reduced_pts_motion{}_pose{}.gif'.format(self.motion_id, self.pose_id), self.images, format='GIF', duration=30)
         # print('------Iteration', self.iteration)
         print(info)
         # if self.gui:
@@ -327,17 +357,19 @@ class DressingEnv(AssistiveEnv):
         self.cloth_force_sum = np.sum(np.linalg.norm(self.cloth_forces, axis=-1))
         self.robot_force_on_human = np.sum(self.robot.get_contact_points(self.human)[-1])
         self.total_force_on_human = self.robot_force_on_human + self.cloth_force_sum
+        self.force_lst.append(self.total_force_on_human)
         self.closest_dist = min(self.robot.get_closest_points(self.human, 0.02)[-1]) if self.robot.get_closest_points(self.human, 0.02)[-1] else None
 
-        line_points = [wrist_pos+[0, -self.human.hand_radius, 0], elbow_pos, shoulder_pos]
+        line_points = [wrist_pos+[0, -self.human.hand_radius, 0], elbow_pos, shoulder_pos+ [-self.human.shoulder_radius, 0, 0]]
         # line_points = [wrist_pos+[self.human.hand_radius, -self.human.hand_radius, 0], elbow_pos+[self.human.hand_radius, -self.human.hand_radius, 0], shoulder_pos+[0, -self.human.hand_radius, 0]]
 
         line1 = line_points[0] - line_points[1] # from elbow to finger
         line2 = line_points[1] - line_points[2] # from shoulder to elbow
-        p.addUserDebugLine(line_points[0], line_points[1], lineColorRGB=[1, 0, 0], lifeTime=2.0)  # Red line
-        p.addUserDebugLine(line_points[2], line_points[1], lineColorRGB=[0, 1, 0], lifeTime=2.0)  # Red line
+        # p.addUserDebugLine(line_points[0], line_points[1], lineColorRGB=[1, 0, 0], lifeTime=2.0)  # Red line
+        # p.addUserDebugLine(line_points[2], line_points[1], lineColorRGB=[0, 1, 0], lifeTime=2.0)  # Red line
 
         self.upper_arm_length = np.linalg.norm(line2)
+        # print('----Upper Arm Length', self.upper_arm_length)
         self.forearm_length = np.linalg.norm(line1) + self.human.hand_radius
         self.line1_ori, self.line2_ori = line_points[1], line_points[2] # elbow, shoulder
         self.line1_dir, self.line2_dir = line1 / np.linalg.norm(line1), line2 / np.linalg.norm(line2)
@@ -359,10 +391,36 @@ class DressingEnv(AssistiveEnv):
         img = np.array(img)
         # plt.imshow(img)
         # plt.show()
+
+        dpi = 100
+        fig = plt.figure(figsize=(self.camera_width/dpi, self.camera_height/dpi), dpi=dpi)
+        ax_total = fig.add_subplot(1, 1, 1) # plot total reward
+
+        ax_total.plot(range(len(self.force_lst)), self.force_lst, label='total_reward', color='C0')
+        ax_total.legend()
+
+        fig.canvas.draw()
+        image_from_plot = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+        image_from_plot = image_from_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+        plt.close("all")
+
         self.images.append(img)
+        self.img_with_force.append(np.concatenate([img[..., :3], image_from_plot], axis=1))
         # [-0.39448014, -1.20101663, 1.225]
-        arm_points, arm_depth, arm_colors = self.get_point_cloud(self.human.body)
-        cloth_points, cloth_depth, cloth_colors = self.get_point_cloud(self.cloth)
+        if not self.occlusion:
+            p.changeVisualShape(self.cloth, -1, rgbaColor=[1, 1, 1, 0], flags=0, physicsClientId=self.id)
+            arm_points, arm_depth, arm_colors = self.get_point_cloud(self.human.body)
+            whole_arm_points, whole_arm_depth = copy.deepcopy(arm_points), copy.deepcopy(arm_depth)
+            p.changeVisualShape(self.cloth, -1, rgbaColor=[1, 1, 1, 1], flags=0, physicsClientId=self.id)
+            cloth_points, cloth_depth, cloth_colors = self.get_point_cloud(self.cloth)
+        else:
+            arm_points, arm_depth, arm_colors = self.get_point_cloud(self.human.body)
+            cloth_points, cloth_depth, cloth_colors = self.get_point_cloud(self.cloth)
+
+            p.changeVisualShape(self.cloth, -1, rgbaColor=[1, 1, 1, 0], flags=0, physicsClientId=self.id)
+            whole_arm_points, whole_arm_depth, arm_colors = self.get_point_cloud(self.human.body)
+            p.changeVisualShape(self.cloth, -1, rgbaColor=[1, 1, 1, 1], flags=0, physicsClientId=self.id)
+
         observable_cloth_pc = cloth_points[cloth_depth > 0].astype(np.float32)
         average_arm_height = np.mean(arm_points, axis=0)[2]
         cloth_height_threshold = average_arm_height - 0.3
@@ -379,8 +437,7 @@ class DressingEnv(AssistiveEnv):
         # if self.iteration == 1:
         # self.collision_kd_tree = scipy.spatial.KDTree(self.arm_points)
         
-        if False:
-        # if True:
+        if self.verbose:
             def create_axes(length=0.5):
                 # Create lines for the axes
                 lines = [
@@ -474,21 +531,139 @@ class DressingEnv(AssistiveEnv):
         observable_arm_pc= arm_points[arm_depth > 0].astype(np.float32)
         observable_arm_pc = observable_arm_pc[:, [1 ,2 ,0]]
 
+        whole_arm_pc= whole_arm_points[whole_arm_depth > 0].astype(np.float32)
+        whole_arm_pc = whole_arm_pc[:, [1 ,2 ,0]]
+
         # observable_arm_pc = arm_points
 
         self.voxelized_observable_arm_pc = voxelize_pc(observable_arm_pc, 0.00625 * 10)
         self.voxelized_observable_cloth_pc = voxelize_pc(observable_cloth_pc, 0.00625 * 10)
+        self.voxelized_whole_arm_pc = voxelize_pc(whole_arm_pc, 0.00625 * 10)
+
+        arm_joint_points = [to_model_axes(line_points[0]), to_model_axes(line_points[1]), to_model_axes(line_points[2])]
+        self.distort_arm_pc = distort_arm_pc(self.voxelized_whole_arm_pc, arm_joint_points)
+        # print('before', self.voxelized_observable_arm_pc)
+
+        # arm_lines = [(to_model_axes(line_points[0]+[0, 0, self.human.shoulder_radius]), to_model_axes(line_points[1]+[0, 0, self.human.shoulder_radius])), (to_model_axes(line_points[1]+[0, 0, self.human.shoulder_radius]), to_model_axes(line_points[2]+[0, 0, self.human.shoulder_radius]))]
+
+        # self.voxelized_observable_arm_pc = filter_points(self.voxelized_observable_arm_pc, arm_lines, threshold=0.05)
+        # print('after', self.voxelized_observable_arm_pc)
 
         end_effector_pos = end_effector_pos.reshape(-1, 3)
         end_effector_pos = end_effector_pos[:, [1 ,2 ,0]]
-        partial_pc = np.concatenate([self.voxelized_observable_arm_pc, self.voxelized_observable_cloth_pc], axis=0)
-        all_points = np.concatenate([partial_pc, end_effector_pos], axis=0)
-        all_points = all_points - end_effector_pos
-        categories = np.zeros((all_points.shape[0], 2))
-        categories[:partial_pc.shape[0], 0] = 1
-        categories[partial_pc.shape[0]:, 1] = 1
-        data = Data(pos=torch.from_numpy(all_points).float(), x=torch.from_numpy(categories).float())
-        pc = data.pos.cpu().detach().numpy()
+
+        if self.verbose:
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+
+            create_axes(ax, length=0.5)
+
+            ax.scatter(self.distort_arm_pc[:, 0], self.distort_arm_pc[:, 1], self.distort_arm_pc[:, 2], c='k', s=10)  # Point color is black, size 10
+            ax.scatter(self.voxelized_observable_arm_pc[:, 0], self.voxelized_observable_arm_pc[:, 1], self.voxelized_observable_arm_pc[:, 2], c='b', s=10)  # Point color is black, size 10
+            plt.show()
+
+        if self.occlusion:
+            if self.use_force:
+                if self.one_hot:
+                    if self.reconstruct:
+                        partial_pc = np.concatenate([self.voxelized_observable_arm_pc, self.voxelized_observable_cloth_pc], axis=0)
+                        scene_pc = np.concatenate([partial_pc, self.distort_arm_pc], axis=0)
+                        all_points = np.concatenate([scene_pc, end_effector_pos], axis=0)
+                        all_points = all_points - end_effector_pos
+
+                        categories = np.zeros((all_points.shape[0], 5))
+                        categories[:len(self.voxelized_observable_arm_pc), 0] = 1
+                        categories[len(self.voxelized_observable_arm_pc):len(self.voxelized_observable_arm_pc) + len(self.voxelized_observable_cloth_pc), 1] = 1
+                        categories[partial_pc.shape[0]:scene_pc.shape[0], 2] = 1
+                        categories[scene_pc.shape[0]:, 3] = 1
+                        categories[scene_pc.shape[0]:, 4] = self.total_force_on_human
+                        data = Data(pos=torch.from_numpy(all_points).float(), x=torch.from_numpy(categories).float())
+                    else:
+                        partial_pc = np.concatenate([self.voxelized_observable_arm_pc, self.voxelized_observable_cloth_pc], axis=0)
+                        all_points = np.concatenate([partial_pc, end_effector_pos], axis=0)
+                        all_points = all_points - end_effector_pos
+
+                        categories = np.zeros((all_points.shape[0], 4))
+                        categories[:len(self.voxelized_observable_arm_pc), 0] = 1 # arm
+                        categories[len(self.voxelized_observable_arm_pc):len(self.voxelized_observable_arm_pc) + len(self.voxelized_observable_cloth_pc), 1] = 1 # cloth
+                        categories[len(self.voxelized_observable_arm_pc) + len(self.voxelized_observable_cloth_pc):, 2] = 1 # gripper
+                        categories[partial_pc.shape[0]:, 3] = self.total_force_on_human
+                        data = Data(pos=torch.from_numpy(all_points).float(), x=torch.from_numpy(categories).float())
+
+                elif self.reconstruct:
+                    partial_pc = np.concatenate([self.voxelized_observable_arm_pc, self.voxelized_observable_cloth_pc], axis=0)
+                    scene_pc = np.concatenate([partial_pc, self.distort_arm_pc], axis=0)
+                    all_points = np.concatenate([scene_pc, end_effector_pos], axis=0)
+                    all_points = all_points - end_effector_pos
+
+                    categories = np.zeros((all_points.shape[0], 4))
+                    categories[:partial_pc.shape[0], 0] = 1
+                    categories[partial_pc.shape[0]:scene_pc.shape[0], 1] = 1
+                    categories[scene_pc.shape[0]:, 2] = 1
+                    categories[scene_pc.shape[0]:, 3] = self.total_force_on_human
+                    data = Data(pos=torch.from_numpy(all_points).float(), x=torch.from_numpy(categories).float())
+
+                else:
+                    partial_pc = np.concatenate([self.voxelized_observable_arm_pc, self.voxelized_observable_cloth_pc], axis=0)
+                    all_points = np.concatenate([partial_pc, end_effector_pos], axis=0)
+                    all_points = all_points - end_effector_pos
+
+                    categories = np.zeros((all_points.shape[0], 3))
+                    categories[:partial_pc.shape[0], 0] = 1
+                    categories[partial_pc.shape[0]:, 1] = 1
+                    categories[partial_pc.shape[0]:, 2] = self.total_force_on_human
+                    data = Data(pos=torch.from_numpy(all_points).float(), x=torch.from_numpy(categories).float())
+
+            else:
+                if self.one_hot:
+                    partial_pc = np.concatenate([self.voxelized_observable_arm_pc, self.voxelized_observable_cloth_pc], axis=0)
+                    all_points = np.concatenate([partial_pc, end_effector_pos], axis=0)
+                    all_points = all_points - end_effector_pos
+                    categories = np.zeros((all_points.shape[0], 3))
+                    categories[:len(self.voxelized_observable_arm_pc), 0] = 1 # arm
+                    categories[len(self.voxelized_observable_arm_pc):len(self.voxelized_observable_arm_pc) + len(self.voxelized_observable_cloth_pc), 1] = 1 # cloth
+                    categories[len(self.voxelized_observable_arm_pc) + len(self.voxelized_observable_cloth_pc):, 2] = 1 # gripper
+                    data = Data(pos=torch.from_numpy(all_points).float(), x=torch.from_numpy(categories).float())
+
+                    scene_pc = np.concatenate([partial_pc, self.distort_arm_pc], axis=0)
+                    rec_points = np.concatenate([scene_pc, end_effector_pos], axis=0)
+                    rec_points = rec_points - end_effector_pos
+                    rec_categories = np.zeros((rec_points.shape[0], 5))
+                    rec_categories[:len(self.voxelized_observable_arm_pc), 0] = 1
+                    rec_categories[len(self.voxelized_observable_arm_pc):len(self.voxelized_observable_arm_pc) + len(self.voxelized_observable_cloth_pc), 1] = 1
+                    rec_categories[partial_pc.shape[0]:scene_pc.shape[0], 2] = 1
+                    rec_categories[scene_pc.shape[0]:, 3] = 1
+                    rec_categories[scene_pc.shape[0]:, 4] = self.total_force_on_human
+                    self.complete_data = Data(pos=torch.from_numpy(rec_points).float(), x=torch.from_numpy(rec_categories).float())
+
+                else:
+                    partial_pc = np.concatenate([self.voxelized_observable_arm_pc, self.voxelized_observable_cloth_pc], axis=0)
+                    all_points = np.concatenate([partial_pc, end_effector_pos], axis=0)
+                    all_points = all_points - end_effector_pos
+                    categories = np.zeros((all_points.shape[0], 2))
+                    categories[:partial_pc.shape[0], 0] = 1
+                    categories[partial_pc.shape[0]:, 1] = 1
+                    data = Data(pos=torch.from_numpy(all_points).float(), x=torch.from_numpy(categories).float())
+
+                    # scene_pc = np.concatenate([partial_pc, self.distort_arm_pc], axis=0)
+                    # rec_points = np.concatenate([scene_pc, end_effector_pos], axis=0)
+                    # rec_points = rec_points - end_effector_pos
+                    # rec_categories = np.zeros((rec_points.shape[0], 4))
+                    # rec_categories[:partial_pc.shape[0], 0] = 1
+                    # rec_categories[partial_pc.shape[0]:scene_pc.shape[0], 1] = 1
+                    # rec_categories[scene_pc.shape[0]:, 2] = 1
+                    # rec_categories[scene_pc.shape[0]:, 3] = self.total_force_on_human
+                    # self.complete_data = Data(pos=torch.from_numpy(rec_points).float(), x=torch.from_numpy(rec_categories).float())
+        else:
+            pointcloud = np.concatenate([self.voxelized_observable_arm_pc, self.voxelized_observable_cloth_pc, end_effector_pos], axis=0)
+            pointcloud = pointcloud - end_effector_pos
+            categories = np.zeros((len(pointcloud), 3)).astype(np.float32)
+
+            categories[:len(self.voxelized_observable_arm_pc), 0] = 1 # arm
+            categories[len(self.voxelized_observable_arm_pc):len(self.voxelized_observable_arm_pc) + len(self.voxelized_observable_cloth_pc), 1] = 1 # cloth
+            categories[len(self.voxelized_observable_arm_pc) + len(self.voxelized_observable_cloth_pc):, 2] = 1 # gripper
+
+            data = Data(pos=torch.from_numpy(pointcloud).float(), x=torch.from_numpy(categories).float())
 
         if self.verbose:
             def create_axes(ax, length=0.5):
@@ -512,6 +687,7 @@ class DressingEnv(AssistiveEnv):
 
             # Create and plot axes
             create_axes(ax, length=0.5)
+            pc = data.pos.cpu().detach().numpy()
 
             # Plot the point cloud
             if pc is not None and len(pc) > 0:
@@ -524,6 +700,7 @@ class DressingEnv(AssistiveEnv):
 
             # Show the plot
             plt.show()
+            plt.savefig('sim_imgs/pc')
         # print(data.pos)
         # from matplotlib import pyplot as plt
         # ax = plt.axes(projection='3d')
@@ -536,10 +713,11 @@ class DressingEnv(AssistiveEnv):
             # plt.show()
         return data
 
-    def reset(self, garment_id=1, motion_id=0, step_idx=0):
+    def reset(self, garment_id=1, motion_id=0, pose_id=-1, step_idx=0):
         super(DressingEnv, self).reset()
         self.garment_id = int(garment_id)
         self.motion_id = int(motion_id)
+        self.pose_id = int(pose_id)
         self.step_idx = step_idx
         self.images = []
         self.build_assistive_env('wheelchair_left', gender='female', human_impairment='none')
@@ -553,7 +731,10 @@ class DressingEnv(AssistiveEnv):
         self.human.motor_forces = 100.0
 
         self.robot.motor_gains = 0.05 # 0.1
-        self.robot.motor_forces = 100.
+        self.robot.motor_forces = 100.0
+
+        # self.generate_init_poses()
+        # init_pose = self.poses_lst[pose_id]
 
         if self.use_mesh:
             self.human = HumanMesh()
@@ -566,15 +747,25 @@ class DressingEnv(AssistiveEnv):
             self.human.set_base_pos_orient(chair_seat_position - self.human.get_vertex_positions(self.human.bottom_index), [0, 0, 0, 1])
         else:
             rng = np.random.default_rng()
-            self.elbow_rand = -90 #+ rng.uniform(-10, 10)
-            self.shoulder_rand = 80 #+ rng.uniform(-5, 5)
+            # self.elbow_rand = -90 + rng.uniform(-10, 10)
+            # self.shoulder_rand = 80 + rng.uniform(-5, 5)
             print(self.elbow_rand, self.shoulder_rand)
             joints_positions = [(self.human.j_right_elbow, self.elbow_rand), (self.human.j_right_shoulder_x, self.shoulder_rand), (self.human.j_left_elbow, -90), (self.human.j_right_hip_x, -90), (self.human.j_right_knee, 80), (self.human.j_left_hip_x, -90), (self.human.j_left_knee, 80)]
             # self.human.setup_joints(joints_positions, use_static_joints=True, reactive_force=1, reactive_gain=0.01)
 
-            self.human.set_joint_angles([j for j, _ in joints_positions], [np.deg2rad(j_angle) for _, j_angle in joints_positions])
-            # self.human.target_joint_angles = self.human.get_joint_angles(self.human.controllable_joint_indices)
-            self.human.control(self.human.all_joint_indices, self.human.get_joint_angles(), 0.05, 100)
+            if self.pose_id == -1:
+                self.human.set_joint_angles([j for j, _ in joints_positions], [np.deg2rad(j_angle) for _, j_angle in joints_positions])
+            
+            else:
+                self.human.set_joint_angles([j for j, _ in joints_positions], [np.deg2rad(j_angle) for _, j_angle in joints_positions])
+                self.generate_init_poses()
+                init_pose = self.poses_lst[pose_id]
+                joints = [self.human.j_right_pecs_x, self.human.j_right_pecs_y, self.human.j_right_pecs_z, self.human.j_right_shoulder_x, self.human.j_right_shoulder_y, self.human.j_right_shoulder_z, self.human.j_right_elbow, self.human.j_right_forearm, self.human.j_right_wrist_x, self.human.j_right_wrist_y]
+                joint_angles = init_pose.tolist()
+                self.human.set_joint_angles([j for j in joints], [j_angle for j_angle in joint_angles])
+
+            self.human.control(self.human.all_joint_indices, self.human.get_joint_angles(), self.human.motor_gains, self.human.motor_forces)
+            # self.human.control(self.human.controllable_joint_indices, init_pose, self.human.motor_gains, self.human.motor_forces)
 
         if self.camera_pos == 'front':
             self.setup_camera_rpy(camera_target=[-0.31471434, -0.2672464, 1.00759685], distance=0.7, rpy=[0, -25, 0], fov=60, camera_width=1080, camera_height=720)
@@ -589,12 +780,12 @@ class DressingEnv(AssistiveEnv):
         elbow_pos = self.human.get_pos_orient(self.human.j_right_elbow)[0]
         wrist_pos = self.human.get_pos_orient(self.human.right_hand)[0]
 
-        line_points = [wrist_pos+[0, -self.human.hand_radius, 0], elbow_pos, shoulder_pos]
+        line_points = [wrist_pos+[0, -self.human.hand_radius, 0], elbow_pos, shoulder_pos+ [-self.human.shoulder_radius, 0, 0]]
         # line_points = [wrist_pos+[self.human.hand_radius, -self.human.hand_radius, 0], elbow_pos+[self.human.hand_radius, -self.human.hand_radius, 0], shoulder_pos+[0, -self.human.hand_radius, 0]]
         line1 = line_points[0] - line_points[1] # from elbow to finger
         line2 = line_points[1] - line_points[2] # from shoulder to elbow
-        p.addUserDebugLine(line_points[0], line_points[1], lineColorRGB=[1, 0, 0], lifeTime=2.0)  # Red line
-        p.addUserDebugLine(line_points[2], line_points[1], lineColorRGB=[0, 1, 0], lifeTime=2.0)  # Red line
+        # p.addUserDebugLine(line_points[0], line_points[1], lineColorRGB=[1, 0, 0], lifeTime=0)  # Red line
+        # p.addUserDebugLine(line_points[2], line_points[1], lineColorRGB=[0, 1, 0], lifeTime=0)  # Red line
 
         self.upper_arm_length = np.linalg.norm(line2)
         self.forearm_length = np.linalg.norm(line1) + self.human.hand_radius
@@ -602,14 +793,8 @@ class DressingEnv(AssistiveEnv):
         self.line1_dir, self.line2_dir = line1 / np.linalg.norm(line1), line2 / np.linalg.norm(line2)
         self.line_points = line_points
 
-        # target_ee_pos = np.array([0.45, -0.45, 1.05])# + self.np_random.uniform(-0.05, 0.05, size=3)
-        # target_ee_orient = self.get_quaternion(self.robot.toc_ee_orient_rpy[self.task][0])
-        # target_ee_orient_shoulder = self.get_quaternion(self.robot.toc_ee_orient_rpy[self.task][-1])
-        # offset = np.array([0, 0, 0.1])
-        # self.init_robot_pose(target_ee_pos, target_ee_orient, [(target_ee_pos, target_ee_orient)], [(shoulder_pos+offset, target_ee_orient_shoulder), (elbow_pos+offset, target_ee_orient), (wrist_pos+offset, target_ee_orient)], arm='left', tools=[], collision_objects=[self.human, self.furniture], right_side=False)
-        # print(self.robot.get_base_pos_orient())
-        # print(self.robot.get_joint_angles(self.robot.controllable_joint_indices))
-        base_pos = [-1.17448014, -0.30101663, 0.825]
+        # base_pos = [-1.17448014, -0.30101663, 0.825]
+        base_pos = [-1.00448014, -0.30101663, 0.825]
         base_orient = [0., 0., 0., 1.]
 
         # base_orient = [0., 0., -0.25249673, 0.96759775]
@@ -617,17 +802,24 @@ class DressingEnv(AssistiveEnv):
         # hand_pos, hand_ori = self.human.get_pos_orient(18, False, True)
         # hand_pos_robot = self.robot.convert_to_base_frame(hand_pos)[0]
         # print(hand_pos_robot)
-        # joint_angles = self.robot.ik(self.robot.left_end_effector, hand_pos_robot, None, self.robot.left_arm_ik_indices, max_iterations=1000, use_current_as_rest=False)
+        # joint_angles = self.robot.ik(self.robot.left_end_effector, hand_pos_robot, None, self.robot.right_arm_ik_indices, max_iterations=1000, use_current_as_rest=False)
         
         # hand_pos, hand_ori = self.human.get_pos_orient(18, False, convert_to_realworld=True)
-        hand_pos, hand_ori = self.human.get_pos_orient(18)
+        # import pdb; pdb.set_trace()
+        wrist_pos, hand_ori = self.human.get_pos_orient(18)
+        hand_pos = []
+        for i in range(len(wrist_pos)):
+            hand_pos.append(wrist_pos[i] + 2 * self.human.hand_radius * self.line1_dir[i])
+
+        # self.create_sphere(radius=0.05, mass=0.0, pos=hand_pos, visual=True, collision=False, rgba=[0, 1, 1, 0.5], maximal_coordinates=False, return_collision_visual=False)
         
-        hand_pos[1] -= 0.57
+        # hand_pos[1] -= 0.57
+        # hand_pos[2] += 0.11
+
+        hand_pos[1] -= 0.49
         hand_pos[2] += 0.11
 
-        # self.create_sphere(radius=0.1, mass=0.0, pos=hand_pos, visual=True, collision=False, rgba=[1, 0, 0, 0.5], maximal_coordinates=False, return_collision_visual=False)
-
-        # self.create_sphere(radius=0.1, mass=0.0, pos=hand_pos2, visual=True, collision=False, rgba=[0, 1, 1, 0.5], maximal_coordinates=False, return_collision_visual=False)
+        # self.create_sphere(radius=0.05, mass=0.0, pos=self.line_points[0], visual=True, collision=False, rgba=[1, 0, 0, 0.5], maximal_coordinates=False, return_collision_visual=False)
 
         # hand_pos[0] += 0.09
         # hand_pos[1] -= 1.3
@@ -642,10 +834,12 @@ class DressingEnv(AssistiveEnv):
         # joint_angles = self.robot.ik(self.robot.right_end_effector, hand_pos, hand_euler, self.robot.right_arm_ik_indices, max_iterations=1000, use_current_as_rest=True)
 
 
-        for _ in range(5):
+        for _ in range(1):
             joint_angles = self.robot.ik(self.robot.right_end_effector, hand_pos, hand_euler, self.robot.right_arm_ik_indices, max_iterations=1000, use_current_as_rest=True)
             self.robot.set_joint_angles(self.robot.controllable_joint_indices, joint_angles)
-            p.stepSimulation(physicsClientId=self.id)
+            # ee, ori = self.robot.get_pos_orient(self.robot.right_end_effector)
+            # print('robot ori', self.robot.get_euler(ori))
+            # p.stepSimulation(physicsClientId=self.id)
         
         # joint_angles = [-1.64317203, -0.95115511, -1.96771027, -0.77079951, 0.28547459, -0.6480673, -1.58786233]
         # self.robot.reset_joints()
@@ -786,18 +980,27 @@ class DressingEnv(AssistiveEnv):
 
         # Enable rendering
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1, physicsClientId=self.id)
+        # robot_euler = [-hand_ori[1], np.pi, hand_ori[0]]
+        robot_euler = [0, np.pi, hand_ori[0]]
 
+        joint_angles = self.robot.ik(self.robot.right_end_effector, hand_pos, robot_euler, self.robot.right_arm_ik_indices, max_iterations=1000, use_current_as_rest=True)
+        self.robot.control(self.robot.controllable_joint_indices, joint_angles, self.robot.motor_gains, self.robot.motor_forces)
+        p.stepSimulation(physicsClientId=self.id)
+
+        # self.create_arm_motion()
+        
         # Wait for the cloth to settle
-        for i in range(30):
+        for i in range(20):
             print(i)
             p.stepSimulation(physicsClientId=self.id)
-        # print('Settled')
+        print('Settled')
 
         robo_pos, robo_ori = self.robot.get_pos_orient(self.robot.left_end_effector)
         robo_pos[1] += 0.5
-        joint_angles = self.robot.ik(self.robot.left_end_effector, robo_pos, robo_ori, self.robot.left_arm_ik_indices, max_iterations=1000, use_current_as_rest=False)
+
+        joint_angles = self.robot.ik(self.robot.left_end_effector, robo_pos, robo_ori, self.robot.right_arm_ik_indices, max_iterations=1000, use_current_as_rest=False)
         self.robot.control(self.robot.controllable_joint_indices, joint_angles, self.robot.motor_gains, self.robot.motor_forces)
-        for i in range(40):
+        for i in range(60):
             print(i)
             p.stepSimulation(physicsClientId=self.id)
 
@@ -818,14 +1021,14 @@ class DressingEnv(AssistiveEnv):
         elif self.motion_id == 1:
             with open('arm_motions/straight_up.pkl', 'rb') as f:
                 target_joint_angles = pickle.load(f)
-            steps = 30
+            steps = 60
             self.arm_traj = np.linspace(joint_angles, target_joint_angles, num=steps)
             self.repeat_traj = 0
             
         elif self.motion_id == 2:
             with open('arm_motions/bend_down.pkl', 'rb') as f:
                 target_joint_angles = pickle.load(f)
-            steps = 30
+            steps = 60
             self.arm_traj = np.linspace(joint_angles, target_joint_angles, num=steps)
             self.repeat_traj = 0
             
@@ -834,29 +1037,156 @@ class DressingEnv(AssistiveEnv):
         elif self.motion_id == 4:
             with open('arm_motions/straight_down.pkl', 'rb') as f:
                 target_joint_angles = pickle.load(f)
-            steps = 30
+            steps = 60
             self.arm_traj = np.linspace(joint_angles, target_joint_angles, num=steps)
             self.repeat_traj = 0
         elif self.motion_id == 5:
             with open('arm_motions/reach_phone.pkl', 'rb') as f:
                 target_joint_angles = pickle.load(f)
-            steps = 30
+            steps = 60
             self.arm_traj = np.linspace(joint_angles, target_joint_angles, num=steps)
             self.repeat_traj = 1
         elif self.motion_id == 6:
             with open('arm_motions/receive_obj.pkl', 'rb') as f:
                 target_joint_angles = pickle.load(f)
-            steps = 30
+            steps = 60
             self.arm_traj = np.linspace(joint_angles, target_joint_angles, num=steps)
             self.repeat_traj = 1
         elif self.motion_id == 7:
             with open('arm_motions/scratch_head.pkl', 'rb') as f:
                 target_joint_angles = pickle.load(f)
-            steps = 30
+            steps = 60 #40 -> 30
             self.arm_traj = np.linspace(joint_angles, target_joint_angles, num=steps)
             self.repeat_traj = 1
+        elif self.motion_id == 8:
+            with open('arm_motions/maneki_arm.pkl', 'rb') as f:
+                target_joint_angles = pickle.load(f)
+            steps = 60
+            self.arm_traj = np.linspace(joint_angles, target_joint_angles, num=steps)
+            self.repeat_traj = 0
+
         else:
             print('Invalid motion id!')
+
+    def generate_init_poses(self):
+        ik_indices = self.human.controllable_joint_indices
+        joint_angles = self.human.get_joint_angles(ik_indices)
+        steps = 60
+
+        with open('arm_motions/bend_down.pkl', 'rb') as f:
+            motion2_target_joint_angles = pickle.load(f)
+        self.poses_lst.extend(np.linspace(joint_angles, motion2_target_joint_angles, num=steps)[9::10])
+        
+        with open('arm_motions/straight_down.pkl', 'rb') as f:
+            motion4_target_joint_angles = pickle.load(f)
+        self.poses_lst.extend(np.linspace(joint_angles, motion4_target_joint_angles, num=steps)[9::10])
+
+        with open('arm_motions/reach_phone.pkl', 'rb') as f:
+            motion5_target_joint_angles = pickle.load(f)
+        self.poses_lst.extend(np.linspace(joint_angles, motion5_target_joint_angles, num=steps)[9::10])
+
+        with open('arm_motions/receive_obj.pkl', 'rb') as f:
+            motion6_target_joint_angles = pickle.load(f)
+        self.poses_lst.extend(np.linspace(joint_angles, motion6_target_joint_angles, num=steps)[9::10])
+
+        with open('arm_motions/scratch_head.pkl', 'rb') as f:
+            motion7_target_joint_angles = pickle.load(f)
+        self.poses_lst.extend(np.linspace(joint_angles, motion7_target_joint_angles, num=steps)[9::10][:-2])
+
+        with open('arm_motions/maneki_arm.pkl', 'rb') as f:
+            motion8_target_joint_angles = pickle.load(f)
+        self.poses_lst.extend(np.linspace(joint_angles, motion8_target_joint_angles, num=steps)[9::10])
+
+        print('Num poses', len(self.poses_lst))
+
+    def align_gripper_rot(self):
+        rotation_scale = 0.002
+        step = 0
+        max_steps = 1000
+        sign_z = 1
+        sign_x = -1
+        last_diff_x = None
+        last_diff_y = None
+        line_idx = alignment_line_indices[self.garment]
+        stage = 0
+
+        while stage != 2 and step < max_steps:
+            if stage == 0:
+                vec1 = self.line1_dir
+                vec2 = np.array([0, 0, 1])
+                normal = np.cross(vec1, vec2)
+                x, y, z, cx, cy, cz, fx, fy, fz = p.getSoftBodyData(self.cloth, physicsClientId=self.id)
+                mesh_points = np.concatenate([np.expand_dims(x, axis=-1), np.expand_dims(y, axis=-1), np.expand_dims(z, axis=-1)], axis=-1)
+
+                shoulder_point1, shoulder_point2 = mesh_points[line_idx[0]], mesh_points[line_idx[1]]
+                shoulder_line = -shoulder_point2 + shoulder_point1
+                shoulder_line_dir = shoulder_line / np.linalg.norm(shoulder_line)
+
+                angle_between_normal_and_shoulder_line = np.arccos(np.dot(shoulder_line_dir, normal))
+                angle_between_normal_and_shoulder_line = np.rad2deg(angle_between_normal_and_shoulder_line)
+
+                diff_z = np.abs(angle_between_normal_and_shoulder_line - 90)
+                finished = diff_z < 0.05
+
+                if not finished:
+                    if angle_between_normal_and_shoulder_line < 90:
+                        action_z = sign_z * rotation_scale
+                    else:
+                        action_z = -sign_z * rotation_scale
+
+                if last_diff_y is not None and diff_z > last_diff_y:
+                    action_z = - action_z
+                    sign_z = -sign_z
+                
+                last_diff_z = diff_z
+                print('diff z', last_diff_z)
+                if finished:
+                    stage += 1
+            
+            if stage == 1:
+                x, y, z, cx, cy, cz, fx, fy, fz = p.getSoftBodyData(self.cloth, physicsClientId=self.id)
+                mesh_points = np.concatenate([np.expand_dims(x, axis=-1), np.expand_dims(y, axis=-1), np.expand_dims(z, axis=-1)], axis=-1)
+
+                shoulder_point1, shoulder_point2 = mesh_points[line_idx[0]], mesh_points[line_idx[1]]
+                shoulder_line = -shoulder_point2 + shoulder_point1
+                shoulder_line_dir = shoulder_line / np.linalg.norm(shoulder_line)
+
+                diff = np.abs(np.arccos(np.dot(-self.line1_dir, shoulder_line_dir)))
+                x_finished = diff < 0.05
+
+                if not x_finished:
+                    if diff > 0:
+                        action_x = sign_x * rotation_scale
+                    else:
+                        action_x = -sign_x * rotation_scale                
+
+                if last_diff_x is not None and diff > last_diff_x:
+                    action_x = - action_x
+                    sign_x = -sign_x
+                
+                last_diff_x = diff
+                print('diff x', last_diff_x)
+
+                if x_finished:
+                    stage += 1
+
+            pos, orient = self.robot.get_pos_orient(self.robot.right_end_effector)
+            ee_cur_R = R.from_quat([orient[0], orient[1], orient[2], orient[3]])
+            
+            if last_diff_x is None:
+                rotation_R = R.from_rotvec([0, 0, last_diff_z])
+            else:
+                rotation_R = R.from_rotvec([last_diff_x, 0, last_diff_z])
+            new_ee_R = rotation_R * ee_cur_R
+            new_ee_quat = new_ee_R.as_quat()
+            for _ in range(1):
+                agent_joint_angles = self.robot.ik(self.robot.right_end_effector, pos, new_ee_quat, self.robot.right_arm_ik_indices, max_iterations=200, use_current_as_rest=True)
+                # self.robot.set_joint_angles(self.robot.controllable_joint_indices, agent_joint_angles)
+                self.robot.control(self.robot.right_arm_ik_indices, agent_joint_angles, self.robot.motor_gains, self.robot.motor_forces)
+                p.stepSimulation(physicsClientId=self.id)
+
+            step += 1
+
     
     def create_arm_motion(self):
         ik_indices = self.human.controllable_joint_indices
@@ -979,6 +1309,25 @@ class DressingEnv(AssistiveEnv):
                 with open('arm_motions/arm_motion_{}.pkl'.format(self.motion_id), 'wb') as f:
                     pickle.dump(joint_angles, f)
 
+        elif self.motion_id == 8:
+            target_pos = curr_pos + np.array([0.1, -0.15, 0.25])
+            for i in range(10):
+                print(i)
+                target_joint_angles = self.human.ik(18, target_pos, target_orient=None, ik_indices=ik_indices, max_iterations=1000, use_current_as_rest=True)
+
+                for _ in range(10):
+                    self.human.control(ik_indices, target_joint_angles, 0.05, 100)
+                    p.stepSimulation(physicsClientId=self.id)
+                    print(self.human.get_pos_orient(18)[0])
+                    joint_angles = self.human.get_joint_angles(ik_indices)
+                    print('diff', np.linalg.norm(joint_angles-target_joint_angles))
+
+                
+                joint_angles = self.human.get_joint_angles(ik_indices)
+                print('diff', np.linalg.norm(joint_angles-target_joint_angles))
+
+                with open('arm_motions/arm_motion_{}.pkl'.format(self.motion_id), 'wb') as f:
+                    pickle.dump(joint_angles, f)
 
         else:
             print('Invalid motion id')

@@ -28,7 +28,7 @@ from pc_replay_buffer import PointCloudReplayBuffer
 from iql_pointcloud import IQLAgent
 from visualization import save_numpy_as_gif
 from dressing_envs import DressingSawyerHumanEnv
-from SAC_AWAC import SAC_AWACAgent
+import pybullet as p
 
 import multiprocessing as mp
 from multiprocessing import Pool
@@ -44,10 +44,10 @@ class ParallelEvaluator:
         self.num_workers = num_workers
         self.pool = Pool(processes=num_workers)
 
-    def evaluate_agents(self, pairs, args):
+    def evaluate_agents(self, agent, step, pairs, args):
         task_args = [
-            (agent, step, garment_id, motion_id, pose_id, args)
-            for agent, step, garment_id, motion_id, pose_id in pairs
+            (agent, step, garment_id, motion_id, args)
+            for garment_id, motion_id in pairs
         ]
 
         ret = self.pool.map(evaluate, task_args)
@@ -120,6 +120,8 @@ def vv_to_args(vv):
 def run_task(vv, log_dir=None, exp_name=None):
     # if resume from directory
     # log_dir = "/home/sreyas/Desktop/Projects/softagent_rpad/data/reward_collection/"
+    if vv.variants()[-1]['resume_from_ckpt']:
+        log_dir = vv.variants()[-1]['resume_from_exp_path']
 
     if log_dir or logger.get_dir() is None:
         logger.configure(dir=log_dir, exp_name=exp_name, format_strs=['csv'])
@@ -166,18 +168,17 @@ def check_rb_min_size(replay_buffers, rb_limit):
 
 # run evaluation of a policy
 def evaluate(arg):
-    agent, step, garment_id, motion_id, pose_id, args = arg
+    agent, step, garment_id, motion_id, args = arg
 
     def run_eval_loop():
-        env = DressingSawyerHumanEnv(policy=3, horizon=args.horizon, camera_pos=args.camera_pos, occlusion=args.occlusion, use_force=args.use_force, one_hot=args.one_hot, render=args.render, gif_path=args.gif_path)
+        env = DressingSawyerHumanEnv(policy=args.policy, horizon=args.horizon, camera_pos=args.camera_pos, occlusion=args.occlusion, use_force=args.use_force, one_hot=args.one_hot, reconstruct = args.reconstruct, render=args.render, gif_path=args.gif_path)
 
-        obs = env.reset(garment_id=garment_id, motion_id=motion_id, pose_id=pose_id, step_idx = step)
+        obs = env.reset(garment_id=garment_id, motion_id=motion_id, step_idx=step)
         done = False
         episode_reward = 0
         ep_info = []
         rewards = []
-        traj_dataset = []
-
+        
         t = 0
         while not done:
             print('------Iteration', t)
@@ -210,55 +211,23 @@ def evaluate(arg):
                     dtheta *= max_rot_axis_ang / np.sqrt(3)
                 step_action[3:] *= dtheta
 
-            # if t > 30:
-            #     rng = np.random.default_rng()
-            #     rand_action = rng.uniform(-0.025, 0.025, size=3)
-            #     step_action[:3] += rand_action
-
-            new_obs, reward, done, info = env.step(step_action)
-            
-            step_data = {
-                'obs': obs,
-                'action': action,
-                'new_obs': new_obs,
-                'reward': reward,
-                'done': done,
-                'info': info,
-                'img': env.step_img,
-                'gripper_pos': env.step_gripper_pos,
-                'line_points': env.step_line_pts,
-                'robot_force': env.robot_force_on_human,
-                'cloth_force': env.cloth_force_sum,
-                'cloth_force_vector': env.cloth_force_vector,
-                'total_force': env.total_force_on_human,
-                'distort_arm_pc': env.distort_arm_pc,
-                'complete_pts': env.complete_data
-            }
-            
-            traj_dataset.append(step_data)
-
-            obs = new_obs
+            obs, reward, done, info = env.step(step_action)
             episode_reward += reward
             ep_info.append(info)
             rewards.append(reward)
             t += 1
-        
-        with open(os.path.join(args.traj_dir, 'p{}_motion{}_{}_{}_{}_{}_{}_{}.pkl'.format(3, env.motion_id, env.camera_pos, env.garment, int(env.shoulder_rand), int(env.elbow_rand), info['whole_arm_ratio'], info['upperarm_ratio'])), 'wb') as f:
-            pickle.dump(traj_dataset, f, protocol=pickle.HIGHEST_PROTOCOL)
-
         env.disconnect()
         return info['upperarm_ratio']
-
         
     upperarm_ratio = run_eval_loop()
     # L.log('eval/garment{}_motion{}_upperarm_ratio'.format(garment_id, motion_id), upperarm_ratio, step)
     # L.dump(step)
     return upperarm_ratio
 
-def make_agent(obs_shape, action_shape, args, device):
+def make_agent(obs_shape, action_shape, args, device, agent="IQL"):
+    # create the sac training agent
 
-    agent_class = SAC_AWACAgent
-    return agent_class(
+    return IQLAgent(
         args=args,
         obs_shape=obs_shape,
         action_shape=action_shape,
@@ -289,7 +258,9 @@ def make_agent(obs_shape, action_shape, args, device):
         curl_latent_dim=args.curl_latent_dim,
         actor_load_name=args.actor_load_name,
         critic_load_name=args.critic_load_name,
+        value_load_name=args.value_load_name,
         agent=args.agent,
+        use_teacher_ddpg_loss=args.__dict__.get("use_teacher_ddpg_loss", False),
     )
 
 def main(args):
@@ -303,94 +274,136 @@ def main(args):
     args.__dict__ = update_env_kwargs(args.__dict__)  # Update env_kwargs
     
     print('Horizon', args.horizon)
-    print('Occlusion?', args.occlusion)
-    print('One-hot?', args.one_hot)
 
-    if args.one_hot:
-        args.pc_feature_dim = 3
-    else:
-        args.pc_feature_dim = 2
+    if args.policy == 1:
+        args.actor_load_name = args.actor_load_name_1
+    
+    elif args.policy == 2:
+        args.actor_load_name = args.actor_load_name_2
+
+    print('Policy: ', args.actor_load_name)
+    if args.resume_from_ckpt:
+        print('Resuming from: ', args.resume_from_path_actor, args.resume_from_path_critic, args.resume_from_path_value)
+
+    # env = DressingSawyerHumanEnv(policy=args.policy, horizon=args.horizon, camera_pos=args.camera_pos, rand=args.rand, render=args.render, path_suffix=int(args.r1_w*10))
+    gif_path = '{}/gifs'.format(logger.get_dir())
+    os.makedirs(gif_path, exist_ok=True)
+    print('Saving gifs at: ', gif_path)
+
 
     # make directory for logging
     ts = time.gmtime()
     ts = time.strftime("%m-%d", ts)
+    dataset_dir = args.dataset_dir
+    args.work_dir = logger.get_dir()
+    args.gif_path = gif_path
+    video_dir = utils.make_dir(os.path.join(args.work_dir, 'video'))
+    model_dir = utils.make_dir(os.path.join(args.work_dir, 'model'))
+    buffer_dir = utils.make_dir(os.path.join(args.work_dir, 'buffer'))
+    L = Logger(args.work_dir, use_tb=args.save_tb, chester_logger=logger)
 
     # create replay buffer
     # device = torch.device('cuda:{}'.format(args.cuda_idx) if torch.cuda.is_available() else 'cpu')
     device = 'cuda:0'
     action_shape = (6,)
     obs_shape = (30000,)
-        
-     # Note
-    dir = '/scratch/alexis/data/traj_data_with_one-hot_force_reconstr'
+    replay_buffers = []
+    rb_limit = args.replay_buffer_capacity // args.replay_buffer_num
+ 
+    buffer = PointCloudReplayBuffer(
+        args, action_shape, rb_limit, args.batch_size, device, td=args.__dict__.get("td", False), n_step=args.__dict__.get("n_step", 1),reward_relabel=args.reward_relabel
+    )
+    buffer.load2(args.dataset_dir)
+    args.pc_feature_dim = 4
 
-    args.traj_dir = '{}/trajs'.format(dir)
-    if not os.path.exists(args.traj_dir):
-        os.makedirs(args.traj_dir)
+    reward_model1 = RewardModelVLM(obs_shape, action_shape, args, use_action=args.reward_model_use_action)
+    reward_model1.load(args.reward_model1_dir, args.reward_model1_step)
+    reward_model1.eval()
+    
+    # reward_model2 = RewardModelVLM(obs_shape, action_shape, args, use_action=args.reward_model_use_action)
+    # reward_model2.load(args.reward_model2_dir, args.reward_model2_step)
+    # reward_model2.eval()
 
-    # dir = os.path.dirname(folder_path)
+    if args.reward_relabel:
+        with torch.no_grad():
+            # buffer.relabel_rewards(reward_model1, reward_model2, device=device)
+            buffer.relabel_rewards(reward_model1, None, device=device)
+        print("Relabeling done")
 
-    L = Logger(dir, use_tb=args.save_tb, chester_logger=logger)
+    args.pc_feature_dim = 5
 
-    gif_path = '{}/gifs'.format(dir)
-    os.makedirs(gif_path, exist_ok=True)
-    print('Saving gifs at: ', gif_path)
-    args.gif_path = gif_path
+    replay_buffers.append(buffer)
+    # create agent
+    agent = make_agent(
+        obs_shape=obs_shape,
+        action_shape=action_shape,
+        args=args,
+        device=device
+    )
 
-    agents_ckpts = [
-                    # "/home/alexis/assistive-gym-fem/assistive_gym/envs/ckpt/actor_1900106.pt",
-                    # "/home/alexis/assistive-gym-fem/assistive_gym/envs/ckpt/actor_best_test_600023_0.65914.pt",
-                    "/scratch/alexis/data/1218_flex_one-hot/model/actor_best_test_600057_0.73525.pt"
-    ]           
+    # parepare statistics
+    best_avg_upper_arm_ratios_train, best_avg_upper_arm_ratios_unseen = -1e6, -1e6
 
-    # agents_ckpts = ["/home/alexis/assistive-gym-fem/assistive_gym/envs/ckpt_rss/actor_160111.pt"]
-         
-    # Note
-    agents = []
-    import re
-    i = 0
-    for ckpt in agents_ckpts:
-        agent = make_agent(
-            obs_shape=obs_shape,
-            action_shape=action_shape,
-            args=args,
-            device=device
-        )
-        
-        agent.load_actor_ckpt(ckpt)
-        # match = re.search(r'(\d+)(?=\D*$)', ckpt)
-        # if match:
-        #     step = int(match.group(1))
-        
-        # Note
-        agents.append((agent, i))
-        i += 1
-    print('Num agents', len(agents))
-
+    # if resume exp
+    if args.resume_from_ckpt:
+        agent.load(args.resume_from_path_actor, args.resume_from_path_critic, args.resume_from_path_value, load_optimizer=args.resume_from_ckpt)
+        ckpt  = torch.load(osp.join(args.resume_from_path_critic), map_location=device)
+        resume_step = ckpt['step']
+        episode = ckpt['episode']
+    else:
+        resume_step = 0
 
     garment_ids = [1, 2]
-    # Note
-    motion_ids = [0, 2, 4, 5, 6, 7]
-    # pose_ids = [i for i in range(28)]
+    motion_ids = [0, 1, 2, 4, 5, 6, 7, 8]
+    pairs = [(x, y) for x in garment_ids for y in motion_ids]
+    print('Num workers', len(pairs))
+        
+    for step in tqdm(range(resume_step, args.num_train_steps)):
+    # for i in range(3):
+        # evaluate agent periodically
+        # if True:
+        #     step = i
+        if step%args.eval_freq == 0 and step >= 0:
+            episode = int(step/args.eval_freq)
+            print("Eval begin step = {}".format(step))
+            L.log('eval-number', episode, step)
+            
+            # print("Eval is happening")
 
-    # Note
-    # pairs = [(x, 0, y) for x in garment_ids for y in pose_ids]
-    pairs = [(a, s, x, y, -1) for a, s in agents for x in garment_ids for y in motion_ids]
+            parallel_evaluator = ParallelEvaluator(num_workers=len(pairs))
+            dressed_ratios = parallel_evaluator.evaluate_agents(agent, step, pairs, args)
+            parallel_evaluator.close()
 
-    # Note
-    print('num pairs', int(len(pairs)))
+            L.log('eval/mean_upperarm_ratio', dressed_ratios, step)
+            L.dump(step)
 
-    for _ in range(10):
-        parallel_evaluator = ParallelEvaluator(num_workers=int(len(pairs)))
-        dressed_ratios = parallel_evaluator.evaluate_agents(pairs, args)
-        parallel_evaluator.close()
+            if args.use_wandb: wandb.log({'mean_upper_arm_ratios': dressed_ratios, 'step': step})
+
+            if dressed_ratios > best_avg_upper_arm_ratios_unseen:
+                best_avg_upper_arm_ratios_unseen = dressed_ratios
+
+                agent.save(model_dir, step, episode, is_best_test=True, best_avg_return_test=round(best_avg_upper_arm_ratios_unseen, 5))
+           
+            if args.save_model:
+                agent.save(model_dir, step, episode)
+
+            if args.save_buffer:
+            # if False:
+                for i in range(args.replay_buffer_num):
+                    replay_buffers[i].save(buffer_dir, i)
+
+            if args.evaluate_only:
+                exit()
+
+        # run training update
+        agent.update(replay_buffers, L, step, pose_id=0)
 
 
 if __name__ == "__main__":
     mp.set_start_method('spawn', force=True)
         
-    exp_prefix =  '2025-0110-pybullet-eval-ckpt'
-    load_variant_path = '/home/alexis/assistive-gym-fem/assistive_gym/envs/variant.json'
+    exp_prefix =  '2025-0113-pybullet-from-scratch'
+    load_variant_path = '/home/alexis/assistive-gym-fem/assistive_gym/envs/variant_real_world_final_ori.json'
     loaded_vg = create_vg_from_json(load_variant_path)
     print("Loaded configs from ", load_variant_path)
     vg = loaded_vg
@@ -400,9 +413,7 @@ if __name__ == "__main__":
 
     exp_count = 0
     timestamp = now.strftime('%m_%d_%H_%M_%S')
-    exp_name = "data_collection_one-hot_reconstr_force"
-    # exp_name = "iql-training-p1-reward_model1-only_eval-t6"
-
+    exp_name = "iql-training-from-scratch-force-reconstr-one-hot"
     print(exp_name)
     exp_name = "{}-{}-{:03}".format(exp_name, timestamp, exp_count)
     log_dir = '/scratch/alexis/data/' + exp_prefix + "/" + exp_name

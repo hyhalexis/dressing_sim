@@ -164,7 +164,8 @@ class IQLAgent(object):
         self.encoder_type = encoder_type
         self.agent = agent
         self.encoder_feature_dim = encoder_feature_dim
-        self.gripper_idx = 2 if args.observation_mode == 'pointcloud_3' else 1
+        self.gripper_idx = args.gripper_idx
+        # self.gripper_idx = 2 if args.observation_mode == 'pointcloud_3' else 1
 
         self.pc_encoder_names = ['pointcloud', 'pointcloud_flow']
 

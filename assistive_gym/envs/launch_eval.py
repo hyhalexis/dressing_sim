@@ -3,7 +3,7 @@ import torch
 import click
 import socket
 from chester.run_exp import run_experiment_lite, VariantGenerator
-from eval_all import run_task
+from eval import run_task
 import argparse
 # from env_viewer import viewer
 
@@ -154,10 +154,10 @@ if __name__ == '__main__':
         '--dry', action='store_true', 
     )
 
-    parser.add_argument('--policy', default=2, choices=['0', '1', '2'])
+    parser.add_argument('--policy', default='2', choices=['0', '1', '2'])
     parser.add_argument('--camera_pos', default='side', choices=['front', 'side'])
 
-    parser.add_argument('--motion_id', default=1)
+    parser.add_argument('--motion_id', default=0)
     parser.add_argument('--garment_id', default=1)
     parser.add_argument('--render', default=0)
     parser.add_argument('--rand', default=0)

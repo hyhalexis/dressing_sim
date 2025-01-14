@@ -73,7 +73,7 @@ def evaluate(env, agent, video_dir, traj_dir, step, args):
 
         # Start
         traj_obses = []
-        obs = env.reset(motion_id=args.motion_id, garment_id=args.garment_id)
+        obs = env.reset(motion_id=args.motion_id, garment_id=args.garment_id, pose_id=-1)
         traj_obses.append(obs)
         done = False
         episode_reward = 0
@@ -103,7 +103,7 @@ def evaluate(env, agent, video_dir, traj_dir, step, args):
                 action = agent.select_action(obs)
             step_action = action.reshape(-1, 6)[-1].flatten()
             # step_action[3] = 0
-
+            print('-----Iteration ', t)
             # step_action[:3] *= 0.01
             x, y, z = step_action[:3].copy() * args.action_scale
             x_r, y_r, z_r = step_action[3:].copy()
@@ -126,7 +126,8 @@ def evaluate(env, agent, video_dir, traj_dir, step, args):
                 if dtheta > max_rot_axis_ang:
                     dtheta *= max_rot_axis_ang / np.sqrt(3)
                 step_action[3:] *= dtheta
-
+            if t >= 60: 
+                step_action[:3] += [0, 0, 0.05]
             print('action', step_action)
             # actions_list.append(step_action)
             # step_action = actions[t]
@@ -269,7 +270,7 @@ def main(args):
         args.__dict__["seed"] = np.random.randint(1, 1000000)
     utils.set_seed_everywhere(args.seed)
 
-    env = DressingSawyerHumanEnv(policy=args.policy, horizon=args.horizon, camera_pos=args.camera_pos, rand=args.rand, render=args.render)
+    env = DressingSawyerHumanEnv(policy=args.policy, horizon=args.horizon, camera_pos=args.camera_pos, render=args.render)
     
     # make directory
     ts = time.gmtime()

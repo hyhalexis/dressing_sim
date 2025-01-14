@@ -575,3 +575,104 @@ def load_data_by_name(data_names, path):
     hf.close()
 
     return data
+
+
+def distance_to_segment(point, A, B):
+    # Vector from A to B
+    AB = B - A
+    # Vector from A to point
+    AP = point - A
+    # Project AP onto AB, get parameter t
+    t = np.dot(AP, AB) / np.dot(AB, AB)
+    # Clamp t to the range [0, 1]
+    t = np.clip(t, 0, 1)
+    # Compute the closest point on the segment
+    Q = A + t * AB
+    # Compute the distance from the point to the segment
+    return np.linalg.norm(point - Q)
+
+def projection_on_segment(point, A, B):
+    # Vector from A to B
+    AB = B - A
+    # Vector from A to point
+    AP = point - A
+    # Project AP onto AB, get parameter t
+    t = np.dot(AP, AB) / np.dot(AB, AB)
+    # Clamp t to the range [0, 1]
+    t = np.clip(t, 0, 1)
+    # Compute the closest point on the segment
+    Q = A + t * AB
+    # Compute the offset from the point to the segment
+    offset = point - Q
+    # Compute the distance from the projection to A
+    proj_dist = np.linalg.norm(Q - A)
+    return offset, proj_dist
+
+def find_point_on_line(A, B, distance):
+    direction = B - A
+    line_length = np.linalg.norm(direction)
+    unit_direction = direction / line_length
+    scaled_vector = unit_direction * distance
+    P = A + scaled_vector
+    return P
+
+
+def filter_points(point_cloud, segments, threshold=0.02):
+    filtered_points = []
+    for point in point_cloud:
+        # Check distance to each segment
+        for A, B in segments:
+            if distance_to_segment(point, A, B) < threshold:
+                filtered_points.append(point)
+                break  # No need to check other segments
+    return np.array(filtered_points)
+
+
+def to_model_axes(arr):
+    return np.array([arr[1], arr[2], arr[0]])
+
+def distort_arm_pc(arm_pc, line_points):
+    rng = np.random.default_rng()
+    distorted_arm_points = []
+    elbow_rand = rng.uniform(-0.1, 0.1, size=3)
+    hand_rand = rng.uniform(-0.15, 0.15, size=3)
+    for point in arm_pc:
+        dist_to_forearm = distance_to_segment(point, line_points[1], line_points[0])
+        dist_to_upper_arm = distance_to_segment(point, line_points[2], line_points[1])
+        if dist_to_forearm < dist_to_upper_arm:
+            start = line_points[1]
+            end = line_points[0]
+
+            new_start = line_points[1] + elbow_rand
+            new_end = line_points[0] + hand_rand
+        else:
+            start = line_points[2]
+            end = line_points[1]
+
+            new_start = start
+            new_end = line_points[1] + elbow_rand
+
+        offset, proj_dist = projection_on_segment(point, start, end)
+        new_proj_dist = proj_dist * (np.linalg.norm(new_start - new_end)/np.linalg.norm(start - end))
+        new_proj_point = find_point_on_line(new_start, new_end, new_proj_dist)
+        new_arm_point = new_proj_point + offset
+        distorted_arm_points.append(new_arm_point)
+
+    return np.array(distorted_arm_points)
+
+def create_axes(ax, length=0.5):
+    # Create lines for the axes
+    lines = [
+        [[0, 0, 0], [length, 0, 0]],  # X axis
+        [[0, 0, 0], [0, length, 0]],  # Y axis
+        [[0, 0, 0], [0, 0, length]]   # Z axis
+    ]
+    
+    # Set colors for the axes
+    colors = ['r', 'g', 'b']  # Red, Green, Blue
+
+    # Plot the axes
+    for line, color in zip(lines, colors):
+        ax.plot3D(*zip(*line), color=color)
+
+        

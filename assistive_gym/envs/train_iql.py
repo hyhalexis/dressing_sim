@@ -102,7 +102,7 @@ def run_task(vv, log_dir=None, exp_name=None):
                 log_dir = vv.variants()[-1]['resume_from_exp_path_p1_5050']
 
             elif vv.variants()[-1]['r1_w'] == 1.0:
-                 log_dir = vv.variants()[-1]['resume_from_exp_path_p1_100'] + '_fixed'
+                 log_dir = vv.variants()[-1]['resume_from_exp_path_p1_100']
 
         elif vv.variants()[-1]['policy'] == 2:
             if vv.variants()[-1]['r1_w'] == 0.7:
@@ -521,8 +521,7 @@ def main(args):
     obs_shape = (30000,)
     replay_buffers = []
     rb_limit = args.replay_buffer_capacity // args.replay_buffer_num
-    args.encoder_type = 'pointcloud_flow'
-    args.pc_feature_dim = 2
+ 
     buffer = PointCloudReplayBuffer(
         args, action_shape, rb_limit, args.batch_size, device, td=args.__dict__.get("td", False), n_step=args.__dict__.get("n_step", 1),reward_relabel=args.reward_relabel
     )
