@@ -44,6 +44,7 @@ class DressingEnv(AssistiveEnv):
         self.particle_radius = 0.00625
         self.camera_width, self.camera_height = 360, 360
         self.cloth_forces = np.zeros(1)
+        self.cloth_force_vector = np.zeros((1, 3))
 
         self.reward_image = None
         self.cap_reward = True
@@ -104,6 +105,12 @@ class DressingEnv(AssistiveEnv):
             contact_positions_temp.append(c)
         self.cloth_forces = np.array(forces_temp)
         self.cloth_force_vector = np.sum(self.cloth_forces, axis=0)
+        if forces_temp == []:
+            self.cloth_force_vector = np.zeros((1, 3))
+        else:
+            if self.cloth_force_vector.shape[0] == 1:
+                print('WTFFFFFFF', self.cloth_force_vector)
+            self.cloth_force_vector = self.cloth_force_vector.reshape(-1, 3)
 
         cloth_shoulder_polygon_particle_pos = mesh_points[self.shoulder_polygon_indices]
 
@@ -292,7 +299,7 @@ class DressingEnv(AssistiveEnv):
         else:
             self.take_step(action)
 
-        obs = self._get_obs()
+        obs, force_vector = self._get_obs()
         reward = self.compute_reward()
         info = self._get_info()
         done = self.iteration >= self.horizon or info['upperarm_ratio'] > 0.99
@@ -322,7 +329,7 @@ class DressingEnv(AssistiveEnv):
         print(info)
         # if self.gui:
         #     print('Task success:', self.task_success, 'Dressing reward:', reward_dressing)
-        return obs, reward, done, info
+        return obs, reward, done, info, force_vector
 
     def _get_info(self):
         ret_dict = {}
@@ -525,14 +532,14 @@ class DressingEnv(AssistiveEnv):
 
         # print('depth shape', cloth_depth.shape, arm_depth.shape)
         
-        observable_cloth_pc = observable_cloth_pc[:, [1 ,2 ,0]]
+        observable_cloth_pc = observable_cloth_pc[:, [1, 2, 0]]
         # observable_cloth_pc = cloth_points
 
         observable_arm_pc= arm_points[arm_depth > 0].astype(np.float32)
-        observable_arm_pc = observable_arm_pc[:, [1 ,2 ,0]]
+        observable_arm_pc = observable_arm_pc[:, [1, 2, 0]]
 
         whole_arm_pc= whole_arm_points[whole_arm_depth > 0].astype(np.float32)
-        whole_arm_pc = whole_arm_pc[:, [1 ,2 ,0]]
+        whole_arm_pc = whole_arm_pc[:, [1, 2, 0]]
 
         # observable_arm_pc = arm_points
 
@@ -711,7 +718,7 @@ class DressingEnv(AssistiveEnv):
         # ax.set_zlabel('Z Axis Label')
         # if self.iteration % 30 == 0:
             # plt.show()
-        return data
+        return data, torch.from_numpy(self.cloth_force_vector).float()
 
     def reset(self, garment_id=1, motion_id=0, pose_id=-1, step_idx=0):
         super(DressingEnv, self).reset()

@@ -80,6 +80,8 @@ class Net(torch.nn.Module):
 
         self.sa_latent_dim = sa_mlp_list[-1][-1]
 
+        self.film_net = nn.Linear(3, 2*sa_mlp_list[self.num_layer-1][-1])
+
     def get_sa_latent(self, x, pos, batch):
         sa_out = (x, pos, batch)
         for i in range(self.num_layer):
@@ -87,13 +89,29 @@ class Net(torch.nn.Module):
 
         return sa_out[0]
 
-    def forward(self, x, pos, batch, visual=False):
+    def forward(self, x, pos, batch, force_vector, visual=False):
         sa_out = (x, pos, batch)
         sa_outs = [sa_out]
         for i in range(self.num_layer):
             sa_out = self.sa_module_list[i](*sa_out)
             if i == self.num_layer - 1:
                 x, pos, batch, indices = sa_out
+                # print(f"force_vector dtype: {force_vector.dtype}")
+                # print(f"film_net dtype: {self.film_net.weight.dtype}")
+                # print('force', force_vector.shape)
+                film_out = self.film_net(force_vector.to(torch.float32))
+                # print('out', film_out.shape)
+                gammas, betas = torch.split(film_out, int(film_out.shape[1]/2), dim=1)
+
+                # print('gammas', gammas.shape)
+                # print('x', x.shape)
+                # print('pos', x.shape)
+
+                gammas = gammas.mean(dim=0).unsqueeze(0).expand(x.shape[0], -1)
+                # print('gammas2', gammas.shape)
+                betas = betas.mean(dim=0).unsqueeze(0).expand(x.shape[0], -1)
+                x = gammas * x + betas
+                # print('x2', x.shape)
                 sa_out =  x, pos, batch
             else:
                 x, pos, batch = sa_out

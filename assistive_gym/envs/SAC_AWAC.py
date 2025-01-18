@@ -99,12 +99,12 @@ class Actor(nn.Module):
         self.maxpool_indices = None
 
     def forward(
-      self, obs, compute_pi=True, compute_log_pi=True, detach_encoder=False, visual=False
+      self, obs, force_vector, compute_pi=True, compute_log_pi=True, detach_encoder=False, visual=False
     ):
         indices = None
         if 'mask' not in self.encoder_type:
             if not visual:
-                obs, indices = self.encoder(obs, detach=detach_encoder, visual=False)
+                obs, indices = self.encoder(obs, force_vector, detach=detach_encoder, visual=False)
                 # print('not mask', obs.shape)
             else:
                 obs, indices, visual_out = self.encoder(obs, detach=detach_encoder, visual=True)

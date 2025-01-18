@@ -202,15 +202,15 @@ class PcFlowEncoder(nn.Module):
     def copy_conv_weights_from(self, source):
         pass
 
-    def forward(self, obs, detach=False, visual=False):
+    def forward(self, obs, force_vector, detach=False, visual=False):
         # assert obs.shape[1] == 3 + self.feature_dim + 1 
         # xyz = obs[:, :3]
         # featuer = obs[:, 3:3+self.feature_dim]
         # batch = obs[:, -1].long()
         if not visual:
-            out, indices = self.pointnet2.forward(obs.x, obs.pos, obs.batch, visual=False)
+            out, indices = self.pointnet2.forward(obs.x, obs.pos, obs.batch, force_vector, visual=False)
         else:
-            out, visual, indices = self.pointnet2.forward(obs.x, obs.pos, obs.batch, visual=True)
+            out, visual, indices = self.pointnet2.forward(obs.x, obs.pos, obs.batch, force_vector, visual=True)
         if detach:
             out = out.detach()
         if not self.output_logits:

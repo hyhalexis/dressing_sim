@@ -180,7 +180,7 @@ def train_reward_model(args):
 
     
 exp_prefix = "12-25-reward-training" #'2024-0728-real-model-experiments'
-load_variant_path = "/home/alexis/assistive-gym-fem/assistive_gym/envs/variant_reward_vlm.json"
+load_variant_path = "/home/alexis/assistive-gym-film/assistive_gym/envs/variant_reward_vlm.json"
 loaded_vg = create_vg_from_json(load_variant_path)
 print("Loaded configs from ", load_variant_path)
 vg = loaded_vg

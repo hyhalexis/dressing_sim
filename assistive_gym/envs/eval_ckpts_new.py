@@ -366,14 +366,14 @@ def main(args):
     agents_ckpts = ["/scratch/alexis/data/2025-0104-pybullet-from-scratch/iql-training-from-scratch-force-reconstr-01_05_09_01_48-000/model/actor_best_test_400000_0.88345.pt",
                     "/scratch/alexis/data/2025-0110-pybullet-from-scratch/iql-training-from-scratch-force-reconstr-reduced-data-01_11_06_42_34-000/model/actor_best_test_280000_0.82393.pt"
                     # "/scratch/alexis/data/2024-1220-pybullet-from-scratch/iql-training-from-scratch-with-force-p1-only-12_20_16_20_55-000/model/actor_best_test_80000_0.91073.pt",
-                    # "/home/alexis/assistive-gym-fem/assistive_gym/envs/ckpt/actor_1900106.pt",
+                    # "/home/alexis/assistive-gym-film/assistive_gym/envs/ckpt/actor_1900106.pt",
 
                     # "/scratch/alexis/data/2024-1205-pybullet-finetuning/iql-training-p1-reward_model1-only-12_05_07_16_53-000/model/actor_60000.pt",
                     # "/scratch/alexis/data/2024-1205-pybullet-finetuning/iql-training-p1-reward_model1-only-12_05_07_16_53-000/model/actor_220000.pt",
                     # "/scratch/alexis/data/2024-1205-pybullet-finetuning/iql-training-p2-reward_model1-only-12_05_05_50_38-000/model/actor_best_test_20000_0.74911.pt"
                     ]
 
-    # agents_ckpts = ["/home/alexis/assistive-gym-fem/assistive_gym/envs/ckpt_rss/actor_160111.pt"]
+    # agents_ckpts = ["/home/alexis/assistive-gym-film/assistive_gym/envs/ckpt_rss/actor_160111.pt"]
          
     # Note
     agents = []
@@ -445,7 +445,7 @@ if __name__ == "__main__":
     mp.set_start_method('spawn', force=True)
         
     exp_prefix =  '2025-0113-pybullet-eval-ckpt'
-    load_variant_path = '/home/alexis/assistive-gym-fem/assistive_gym/envs/variant_eval.json'
+    load_variant_path = '/home/alexis/assistive-gym-film/assistive_gym/envs/variant_eval.json'
     loaded_vg = create_vg_from_json(load_variant_path)
     print("Loaded configs from ", load_variant_path)
     vg = loaded_vg

@@ -338,12 +338,12 @@ def main(args):
     args.gif_path = gif_path
 
     agents_ckpts = [
-                    # "/home/alexis/assistive-gym-fem/assistive_gym/envs/ckpt/actor_1900106.pt",
-                    # "/home/alexis/assistive-gym-fem/assistive_gym/envs/ckpt/actor_best_test_600023_0.65914.pt",
+                    # "/home/alexis/assistive-gym-film/assistive_gym/envs/ckpt/actor_1900106.pt",
+                    # "/home/alexis/assistive-gym-film/assistive_gym/envs/ckpt/actor_best_test_600023_0.65914.pt",
                     "/scratch/alexis/data/1218_flex_one-hot/model/actor_best_test_600057_0.73525.pt"
     ]           
 
-    # agents_ckpts = ["/home/alexis/assistive-gym-fem/assistive_gym/envs/ckpt_rss/actor_160111.pt"]
+    # agents_ckpts = ["/home/alexis/assistive-gym-film/assistive_gym/envs/ckpt_rss/actor_160111.pt"]
          
     # Note
     agents = []
@@ -390,7 +390,7 @@ if __name__ == "__main__":
     mp.set_start_method('spawn', force=True)
         
     exp_prefix =  '2025-0110-pybullet-eval-ckpt'
-    load_variant_path = '/home/alexis/assistive-gym-fem/assistive_gym/envs/variant.json'
+    load_variant_path = '/home/alexis/assistive-gym-film/assistive_gym/envs/variant.json'
     loaded_vg = create_vg_from_json(load_variant_path)
     print("Loaded configs from ", load_variant_path)
     vg = loaded_vg

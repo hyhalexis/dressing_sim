@@ -558,7 +558,7 @@ def main(args):
 if __name__ == "__main__":
         
     exp_prefix =  '2024-1203-pybullet-from-scratch'
-    load_variant_path = '/home/alexis/assistive-gym-fem/assistive_gym/envs/variant_real_world_final.json'
+    load_variant_path = '/home/alexis/assistive-gym-film/assistive_gym/envs/variant_real_world_final.json'
     loaded_vg = create_vg_from_json(load_variant_path)
     print("Loaded configs from ", load_variant_path)
     vg = loaded_vg

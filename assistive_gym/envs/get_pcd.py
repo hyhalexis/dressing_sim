@@ -9,7 +9,7 @@ import os
 
 model = torch.jit.load('models/nlf_l_multi.torchscript').cuda().eval()
 
-input_file = '/home/alexis/assistive-gym-fem/assistive_gym/envs/temp'
+input_file = '/home/alexis/assistive-gym-film/assistive_gym/envs/temp'
 with open(input_file, 'rb') as f:
     imgs = pickle.load(f)
 

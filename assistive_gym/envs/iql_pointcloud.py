@@ -273,7 +273,7 @@ class IQLAgent(object):
             self.CURL.train(training)
 
 
-    def select_action(self, obs, requires_grad=False):
+    def select_action(self, obs, force_vector, requires_grad=False):
         with torch.set_grad_enabled(requires_grad):
             if self.encoder_type in ['pixel', 'identity']:
                 if not isinstance(obs, torch.Tensor):
@@ -289,9 +289,11 @@ class IQLAgent(object):
                     obs_.pos.requires_grad = True
                     obs_.x.requires_grad = True
                     obs_.requires_grad = True
-
+            force_vector = force_vector.to(self.device)
+            if requires_grad:
+                force_vector.requires_grad = True
             mu, _, _, _ = self.actor(
-                obs_, compute_pi=False, compute_log_pi=False
+                obs_, force_vector, compute_pi=False, compute_log_pi=False
             )
             if not requires_grad:
                 return mu.cpu().data.numpy().flatten()
@@ -299,7 +301,7 @@ class IQLAgent(object):
                 return mu, obs_
 
 
-    def sample_action(self, obs, return_std=False):
+    def sample_action(self, obs, force_vector, return_std=False):
         with torch.no_grad():
             if self.encoder_type in ['pixel', 'identity']:
                 if not isinstance(obs, torch.Tensor):
@@ -311,8 +313,8 @@ class IQLAgent(object):
                 obs_ = copy.deepcopy(obs)
                 obs_.batch = torch.from_numpy(np.zeros(obs.x.shape[0], dtype=np.int64))
                 obs_ = obs_.to(self.device)
-
-            mu, pi, _, logstd = self.actor(obs_, compute_log_pi=False)
+            force_vector = force_vector.to(self.device)
+            mu, pi, _, logstd = self.actor(obs_, force_vector, compute_log_pi=False)
             if not return_std:
                 return pi.cpu().data.numpy().flatten()
             else:
@@ -416,12 +418,12 @@ class IQLAgent(object):
             self.critic_lr_scheduler.step()
             L.log('train/critic_lr', self.critic_optimizer.param_groups[0]['lr'], step)
 
-    def update_actor(self, adv_array, obs_array, actions_array, L, step, non_randomized_obs_array=None, pose_id=None, sample_buffer_indices=[0]):
+    def update_actor(self, adv_array, obs_array, actions_array, force_vector_array, L, step, non_randomized_obs_array=None, pose_id=None, sample_buffer_indices=[0]):
         actor_losses = []
         # print("Updating Actor")
-        for i, (adv, obs, action, non_randomized_obs, region_idx) in enumerate(zip(adv_array, obs_array, actions_array, non_randomized_obs_array, sample_buffer_indices)):
+        for i, (adv, obs, action, force_vector, non_randomized_obs, region_idx) in enumerate(zip(adv_array, obs_array, actions_array, force_vector_array, non_randomized_obs_array, sample_buffer_indices)):
             exp_adv = torch.exp(self.beta * adv.detach()).clamp(max=EXP_ADV_MAX)
-            mu, pi, log_pi, log_std = self.actor(obs, detach_encoder=self.detach_encoder)
+            mu, pi, log_pi, log_std = self.actor(obs, force_vector, detach_encoder=self.detach_encoder)
             if 'flow' in self.encoder_type:
                 log_pi = log_pi[obs.x[:, self.gripper_idx] == 1]
             new_action = action.clone()
@@ -452,7 +454,7 @@ class IQLAgent(object):
 
     def update(self, replay_buffers, L, step, pretrain_critic=False, pose_id=None, real_world_pc_buffer=None):
         # print("Calling update")
-        obs_array, action_array, reward_array, next_obs_array, not_done_array, cpc_kwargs_array, auxiliary_kwargs_array, next_v_array = [], [], [], [], [], [], [],[]
+        obs_array, action_array, reward_array, next_obs_array, not_done_array, force_vector_array, cpc_kwargs_array, auxiliary_kwargs_array, next_v_array = [], [], [], [], [], [], [],[], []
         if len(replay_buffers) > self.args.sample_replay_buffer_num:
             sample_buffer_indices = np.random.choice(len(replay_buffers), size=self.args.sample_replay_buffer_num, replace=False)
         else:
@@ -460,13 +462,14 @@ class IQLAgent(object):
             
         sampled_buffers = [replay_buffers[i] for i in sample_buffer_indices]
         for buffer in sampled_buffers:
-            obs, action, reward, next_obs, not_done, cpc_kwargs, auxiliary_kwargs = buffer.sample_proprio(
+            obs, action, reward, next_obs, not_done, force_vector, cpc_kwargs, auxiliary_kwargs = buffer.sample_proprio(
                     False, self.args.full_obs_guide)
             obs_array.append(obs)
             action_array.append(action)
             reward_array.append(reward)
             next_obs_array.append(next_obs)
             not_done_array.append(not_done)
+            force_vector_array.append(force_vector)
             cpc_kwargs_array.append(cpc_kwargs)
             auxiliary_kwargs_array.append(auxiliary_kwargs)
             with torch.no_grad():
@@ -494,7 +497,7 @@ class IQLAgent(object):
         if self.args.train_actor:
             adv_array = self.update_value_network(obs_array, action_array, reward_array, next_obs_array, not_done_array, L, step, pretrain_critic, pose_id=pose_id, sample_buffer_indices=sample_buffer_indices)
             self.update_critic(next_v_array, obs_array, action_array, reward_array, next_obs_array, not_done_array, L, step, pretrain_critic, pose_id=pose_id, sample_buffer_indices=sample_buffer_indices)
-            self.update_actor(adv_array,obs_array,action_array, L, step, non_randomized_obs_array, pose_id=pose_id, sample_buffer_indices=sample_buffer_indices)
+            self.update_actor(adv_array,obs_array,action_array, force_vector_array, L, step, non_randomized_obs_array, pose_id=pose_id, sample_buffer_indices=sample_buffer_indices)
 
 
         if step % self.critic_target_update_freq == 0:

@@ -327,14 +327,14 @@ def main(args):
     # for agent in agents:
     #     agents_ckpts.append(os.path.join(folder_path, agent))
 
-    # agents_ckpts = ["/home/alexis/assistive-gym-fem/assistive_gym/envs/ckpt/actor_1900106.pt",
-    #                 "/home/alexis/assistive-gym-fem/assistive_gym/envs/ckpt/actor_best_test_600023_0.65914.pt",
+    # agents_ckpts = ["/home/alexis/assistive-gym-film/assistive_gym/envs/ckpt/actor_1900106.pt",
+    #                 "/home/alexis/assistive-gym-film/assistive_gym/envs/ckpt/actor_best_test_600023_0.65914.pt",
     #                 "/scratch/alexis/data/2024-1205-pybullet-finetuning/iql-training-p1-reward_model1-only-12_05_07_16_53-000/model/actor_60000.pt",
     #                 "/scratch/alexis/data/2024-1205-pybullet-finetuning/iql-training-p1-reward_model1-only-12_05_07_16_53-000/model/actor_220000.pt",
     #                 "/scratch/alexis/data/2024-1205-pybullet-finetuning/iql-training-p2-reward_model1-only-12_05_05_50_38-000/model/actor_best_test_20000_0.74911.pt"
     #                 ]
 
-    agents_ckpts = ["/home/alexis/assistive-gym-fem/assistive_gym/envs/rss_version/ckpt_rss/actor_160111.pt"]
+    agents_ckpts = ["/home/alexis/assistive-gym-film/assistive_gym/envs/rss_version/ckpt_rss/actor_160111.pt"]
          
     # Note
     agents = []
@@ -391,7 +391,7 @@ if __name__ == "__main__":
     mp.set_start_method('spawn', force=True)
         
     exp_prefix =  '2025-0105-pybullet-eval-ckpt'
-    load_variant_path = '/home/alexis/assistive-gym-fem/assistive_gym/envs/rss_version/variant_rss.json'
+    load_variant_path = '/home/alexis/assistive-gym-film/assistive_gym/envs/rss_version/variant_rss.json'
     loaded_vg = create_vg_from_json(load_variant_path)
     print("Loaded configs from ", load_variant_path)
     vg = loaded_vg

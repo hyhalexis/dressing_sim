@@ -173,7 +173,7 @@ def evaluate(arg):
     def run_eval_loop():
         env = DressingSawyerHumanEnv(policy=args.policy, horizon=args.horizon, camera_pos=args.camera_pos, occlusion=args.occlusion, use_force=args.use_force, one_hot=args.one_hot, reconstruct = args.reconstruct, render=args.render, gif_path=args.gif_path)
 
-        obs = env.reset(garment_id=garment_id, motion_id=motion_id, step_idx=step)
+        obs, force_vector = env.reset(garment_id=garment_id, motion_id=motion_id, step_idx=step)
         done = False
         episode_reward = 0
         ep_info = []
@@ -184,7 +184,8 @@ def evaluate(arg):
             print('------Iteration', t)
 
             with utils.eval_mode(agent):
-                action = agent.select_action(obs)
+                action = agent.select_action(obs, force_vector)
+                # print('outside', force_vector.shape)
             step_action = action.reshape(-1, 6)[-1].flatten()
             # step_action[3] = 0
 
@@ -211,7 +212,7 @@ def evaluate(arg):
                     dtheta *= max_rot_axis_ang / np.sqrt(3)
                 step_action[3:] *= dtheta
 
-            obs, reward, done, info = env.step(step_action)
+            obs, reward, done, info, force_vector = env.step(step_action)
             episode_reward += reward
             ep_info.append(info)
             rewards.append(reward)
@@ -313,10 +314,10 @@ def main(args):
     buffer = PointCloudReplayBuffer(
         args, action_shape, rb_limit, args.batch_size, device, td=args.__dict__.get("td", False), n_step=args.__dict__.get("n_step", 1),reward_relabel=args.reward_relabel
     )
-    buffer.load2(args.dataset_dir)
-    args.pc_feature_dim = 4
+    buffer.load2('/media/alexis/f8d6014a-8745-471e-ac53-5e50bf9ae322/alexis/traj_data_with_force_reconstr/trajs')
 
     reward_model1 = RewardModelVLM(obs_shape, action_shape, args, use_action=args.reward_model_use_action)
+    print(args.pc_feature_dim)
     reward_model1.load(args.reward_model1_dir, args.reward_model1_step)
     reward_model1.eval()
     
@@ -329,8 +330,6 @@ def main(args):
             # buffer.relabel_rewards(reward_model1, reward_model2, device=device)
             buffer.relabel_rewards(reward_model1, None, device=device)
         print("Relabeling done")
-
-    args.pc_feature_dim = 5
 
     replay_buffers.append(buffer)
     # create agent
@@ -402,8 +401,9 @@ def main(args):
 if __name__ == "__main__":
     mp.set_start_method('spawn', force=True)
         
-    exp_prefix =  '2025-0113-pybullet-from-scratch'
-    load_variant_path = '/home/alexis/assistive-gym-fem/assistive_gym/envs/variant_real_world_final_ori.json'
+    exp_prefix =  '2025-0116-pybullet-from-scratch'
+    load_variant_path = '/home/alexis/assistive-gym-film/assistive_gym/envs/variant_real_world_final_ori.json'
+    
     loaded_vg = create_vg_from_json(load_variant_path)
     print("Loaded configs from ", load_variant_path)
     vg = loaded_vg
@@ -413,7 +413,7 @@ if __name__ == "__main__":
 
     exp_count = 0
     timestamp = now.strftime('%m_%d_%H_%M_%S')
-    exp_name = "iql-training-from-scratch-force-reconstr-one-hot"
+    exp_name = "iql-training-film-force-simple"
     print(exp_name)
     exp_name = "{}-{}-{:03}".format(exp_name, timestamp, exp_count)
     log_dir = '/scratch/alexis/data/' + exp_prefix + "/" + exp_name
