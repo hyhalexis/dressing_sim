@@ -519,16 +519,18 @@ class PointCloudReplayBuffer():
                 not_dones.append(1.0 if i < len(traj) - 1 else 0.0)  # Last transition gets not_done = 0
                 non_randomized_obses.append(None)
                 forces.append(transition['total_force'])
-                if np.isscalar(transition['cloth_force_vector']) and transition['cloth_force_vector']  == 0:
-                    transition['cloth_force_vector'] = np.zeros(3)
-                force_vectors.append(torch.from_numpy(transition['cloth_force_vector'][[1, 2, 0]]).float())
+                force_vectors.append(transition['cloth_force_vector'])
+
+                # if np.isscalar(transition['cloth_force_vector']) and transition['cloth_force_vector']  == 0:
+                #     transition['cloth_force_vector'] = np.zeros(3)
+                # force_vectors.append(torch.from_numpy(transition['cloth_force_vector'][[1, 2, 0]]).float())
         
         payload = [obses, next_obses, actions, rewards, not_dones, non_randomized_obses, forces, ori_obses, force_vectors]
         torch.save(payload, '/scratch/alexis/data/payload_film_force_simple_tiny')
 
     def load2(self, data_dir):
         # self.save_as_payload(data_dir)
-        payload = torch.load('/scratch/alexis/data/payload_film_force_simple')
+        payload = torch.load(data_dir)
 
         # Convert lists to tensors
         self.obses = payload[0]
@@ -608,7 +610,7 @@ class PointCloudReplayBuffer():
         #     self.buffer_start = end
     
     
-    def process(self, obs_1, act_1,device='cuda',debug=False):
+    def process(self, obs_1, act_1, device='cuda',debug=False):
         self.debug = debug
         if self.debug:
             print("process - Size of inputs as obs_1:", len(obs_1))
@@ -643,7 +645,7 @@ class PointCloudReplayBuffer():
             act_1[(obs_1.batch == b_idx)] = act_1[(obs_1.batch == b_idx) & (obs_1.x[:, gripper_idx] == 1)]
         return obs_1, act_1
     
-    def relabel_rewards(self, reward_model1, reward_model2, device='cuda'):
+    def relabel_rewards(self, reward_model1, reward_model2):
         for i in tqdm(range(self.idx)):
             obs, action, reward, done, next_obs = self.obses[i], self.actions[i], self.rewards[i], self.not_dones[i], self.next_obses[i]
             # obs = ori_obs.to(self.device)
@@ -656,7 +658,7 @@ class PointCloudReplayBuffer():
             # obs_force.x[-1, 3] = force
             # ori_obs = obs_force.to(self.device)
 
-            obs, act = self.process([obs], [action], device=device)
+            obs, act = self.process([obs], [action], device=self.device)
             reward = reward
             done = done
             with torch.no_grad():

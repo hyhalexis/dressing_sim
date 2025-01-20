@@ -80,7 +80,12 @@ class Net(torch.nn.Module):
 
         self.sa_latent_dim = sa_mlp_list[-1][-1]
 
-        self.film_net = nn.Linear(3, 2*sa_mlp_list[self.num_layer-1][-1])
+        self.film_layers = nn.ModuleList()
+        self.film_layers.append(nn.Linear(3, 2*sa_mlp_list[self.num_layer-1][-1]))
+        for l_idx in range(self.num_layer):
+            self.film_layers.append(nn.Linear(3, 2*fp_mlp_list[l_idx][-1]))
+
+        # self.film_net = nn.Linear(3, 2*sa_mlp_list[self.num_layer-1][-1])
 
     def get_sa_latent(self, x, pos, batch):
         sa_out = (x, pos, batch)
@@ -99,7 +104,7 @@ class Net(torch.nn.Module):
                 # print(f"force_vector dtype: {force_vector.dtype}")
                 # print(f"film_net dtype: {self.film_net.weight.dtype}")
                 # print('force', force_vector.shape)
-                film_out = self.film_net(force_vector.to(torch.float32))
+                film_out = self.film_layers[0](force_vector.to(torch.float32))
                 # print('out', film_out.shape)
                 gammas, betas = torch.split(film_out, int(film_out.shape[1]/2), dim=1)
 
@@ -118,9 +123,27 @@ class Net(torch.nn.Module):
             sa_outs.append(sa_out)
 
         fp_out = self.fp_module_list[0](*sa_outs[-1], *sa_outs[-2])
+
+        x, pos_skip, batch_skip = fp_out
+        film_out = self.film_layers[1](force_vector.to(torch.float32))
+        gammas, betas = torch.split(film_out, int(film_out.shape[1]/2), dim=1)
+        gammas = gammas.mean(dim=0).unsqueeze(0).expand(x.shape[0], -1)
+        betas = betas.mean(dim=0).unsqueeze(0).expand(x.shape[0], -1)
+        x = gammas * x + betas
+        fp_out = x, pos_skip, batch_skip
+
         fp_outs = [fp_out]
         for i in range(1, self.num_layer):
             fp_out = self.fp_module_list[i](*fp_out, *sa_outs[-(i+2)])
+
+            x, pos_skip, batch_skip = fp_out
+            film_out = self.film_layers[i+1](force_vector.to(torch.float32))
+            gammas, betas = torch.split(film_out, int(film_out.shape[1]/2), dim=1)
+            gammas = gammas.mean(dim=0).unsqueeze(0).expand(x.shape[0], -1)
+            betas = betas.mean(dim=0).unsqueeze(0).expand(x.shape[0], -1)
+            x = gammas * x + betas
+            fp_out = x, pos_skip, batch_skip
+
             fp_outs.append(fp_out)
 
         x, _, _ = fp_out

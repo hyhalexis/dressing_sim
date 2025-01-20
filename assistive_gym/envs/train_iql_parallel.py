@@ -266,8 +266,8 @@ def make_agent(obs_shape, action_shape, args, device, agent="IQL"):
 
 def main(args):
     mp.set_start_method('forkserver', force=True)
-    import tempfile
-    tempfile.tempdir = '/scratch/alexis/tmp'
+    # import tempfile
+    # tempfile.tempdir = '/scratch/alexis/tmp'
     if args.seed == -1:
         args.__dict__["seed"] = np.random.randint(1, 1000000)
     utils.set_seed_everywhere(args.seed)
@@ -304,8 +304,8 @@ def main(args):
     L = Logger(args.work_dir, use_tb=args.save_tb, chester_logger=logger)
 
     # create replay buffer
-    # device = torch.device('cuda:{}'.format(args.cuda_idx) if torch.cuda.is_available() else 'cpu')
-    device = 'cuda:0'
+    device = torch.device('cuda:{}'.format(args.cuda_idx) if torch.cuda.is_available() else 'cpu')
+    # device = 'cuda:0'
     action_shape = (6,)
     obs_shape = (30000,)
     replay_buffers = []
@@ -314,7 +314,7 @@ def main(args):
     buffer = PointCloudReplayBuffer(
         args, action_shape, rb_limit, args.batch_size, device, td=args.__dict__.get("td", False), n_step=args.__dict__.get("n_step", 1),reward_relabel=args.reward_relabel
     )
-    buffer.load2('/media/alexis/f8d6014a-8745-471e-ac53-5e50bf9ae322/alexis/traj_data_with_force_reconstr/trajs')
+    buffer.load2(args.parsed_dataset_dir)
 
     reward_model1 = RewardModelVLM(obs_shape, action_shape, args, use_action=args.reward_model_use_action)
     print(args.pc_feature_dim)
@@ -328,7 +328,7 @@ def main(args):
     if args.reward_relabel:
         with torch.no_grad():
             # buffer.relabel_rewards(reward_model1, reward_model2, device=device)
-            buffer.relabel_rewards(reward_model1, None, device=device)
+            buffer.relabel_rewards(reward_model1, None)
         print("Relabeling done")
 
     replay_buffers.append(buffer)
@@ -355,7 +355,7 @@ def main(args):
     garment_ids = [1, 2]
     motion_ids = [0, 1, 2, 4, 5, 6, 7, 8]
     pairs = [(x, y) for x in garment_ids for y in motion_ids]
-    print('Num workers', len(pairs))
+    print('Num workers', len(pairs)//2)
         
     for step in tqdm(range(resume_step, args.num_train_steps)):
     # for i in range(3):
@@ -369,7 +369,7 @@ def main(args):
             
             # print("Eval is happening")
 
-            parallel_evaluator = ParallelEvaluator(num_workers=len(pairs))
+            parallel_evaluator = ParallelEvaluator(num_workers=(len(pairs)//2))
             dressed_ratios = parallel_evaluator.evaluate_agents(agent, step, pairs, args)
             parallel_evaluator.close()
 
@@ -402,7 +402,7 @@ if __name__ == "__main__":
     mp.set_start_method('spawn', force=True)
         
     exp_prefix =  '2025-0116-pybullet-from-scratch'
-    load_variant_path = '/home/alexis/assistive-gym-film/assistive_gym/envs/variant_real_world_final_ori.json'
+    load_variant_path = '/home/ahao/assistive-gym-fem/assistive_gym/envs/variant_real_world_final_ori.json'
     
     loaded_vg = create_vg_from_json(load_variant_path)
     print("Loaded configs from ", load_variant_path)
@@ -416,7 +416,7 @@ if __name__ == "__main__":
     exp_name = "iql-training-film-force-simple"
     print(exp_name)
     exp_name = "{}-{}-{:03}".format(exp_name, timestamp, exp_count)
-    log_dir = '/scratch/alexis/data/' + exp_prefix + "/" + exp_name
+    log_dir = '/project_data/held/ahao/data/' + exp_prefix + "/" + exp_name
 
     run_task(vg, log_dir=log_dir, exp_name=exp_name)
     #eval()

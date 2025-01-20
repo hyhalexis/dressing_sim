@@ -18,16 +18,11 @@ import torch
 import wandb
 from chester.run_exp import run_experiment_lite, VariantGenerator
 
-from torch_geometric.data import Batch
-from reward_model import RewardModel3, RewardModelVLM
 from chester import logger
 import utils
 from default_config import DEFAULT_CONFIG
 from logger import Logger
-from pc_replay_buffer import PointCloudReplayBuffer
-from iql_pointcloud import IQLAgent
-from visualization import save_numpy_as_gif
-from dressing_envs import DressingSawyerHumanEnv
+from dressing_envs import DressingSawyerHumanEnvData
 from SAC_AWAC import SAC_AWACAgent
 
 import multiprocessing as mp
@@ -169,7 +164,7 @@ def evaluate(arg):
     agent, step, garment_id, motion_id, pose_id, args = arg
 
     def run_eval_loop():
-        env = DressingSawyerHumanEnv(policy=3, horizon=args.horizon, camera_pos=args.camera_pos, occlusion=args.occlusion, use_force=args.use_force, one_hot=args.one_hot, render=args.render, gif_path=args.gif_path)
+        env = DressingSawyerHumanEnvData(policy=3, horizon=args.horizon, camera_pos=args.camera_pos, occlusion=args.occlusion, use_force=args.use_force, one_hot=args.one_hot, render=args.render, gif_path=args.gif_path)
 
         obs = env.reset(garment_id=garment_id, motion_id=motion_id, pose_id=pose_id, step_idx = step)
         done = False
@@ -322,7 +317,7 @@ def main(args):
     obs_shape = (30000,)
         
      # Note
-    dir = '/scratch/alexis/data/traj_data_with_one-hot_force_reconstr'
+    dir = '/project_data/held/ahao/data/traj_data_with_force_reconstr_film'
 
     args.traj_dir = '{}/trajs'.format(dir)
     if not os.path.exists(args.traj_dir):
@@ -340,7 +335,8 @@ def main(args):
     agents_ckpts = [
                     # "/home/alexis/assistive-gym-film/assistive_gym/envs/ckpt/actor_1900106.pt",
                     # "/home/alexis/assistive-gym-film/assistive_gym/envs/ckpt/actor_best_test_600023_0.65914.pt",
-                    "/scratch/alexis/data/1218_flex_one-hot/model/actor_best_test_600057_0.73525.pt"
+                    # "/scratch/alexis/data/1218_flex_one-hot/model/actor_best_test_600057_0.73525.pt"
+                    "/home/ahao/assistive-gym-fem/assistive_gym/envs/ckpt/actor_1900106.pt"
     ]           
 
     # agents_ckpts = ["/home/alexis/assistive-gym-film/assistive_gym/envs/ckpt_rss/actor_160111.pt"]
@@ -380,7 +376,7 @@ def main(args):
     # Note
     print('num pairs', int(len(pairs)))
 
-    for _ in range(10):
+    for _ in range(18):
         parallel_evaluator = ParallelEvaluator(num_workers=int(len(pairs)))
         dressed_ratios = parallel_evaluator.evaluate_agents(pairs, args)
         parallel_evaluator.close()
@@ -389,7 +385,7 @@ def main(args):
 if __name__ == "__main__":
     mp.set_start_method('spawn', force=True)
         
-    exp_prefix =  '2025-0110-pybullet-eval-ckpt'
+    exp_prefix =  '2025-0120-pybullet-eval-ckpt'
     load_variant_path = '/home/alexis/assistive-gym-film/assistive_gym/envs/variant.json'
     loaded_vg = create_vg_from_json(load_variant_path)
     print("Loaded configs from ", load_variant_path)
@@ -400,12 +396,12 @@ if __name__ == "__main__":
 
     exp_count = 0
     timestamp = now.strftime('%m_%d_%H_%M_%S')
-    exp_name = "data_collection_one-hot_reconstr_force"
+    exp_name = "data_collection_reconstr_force_film"
     # exp_name = "iql-training-p1-reward_model1-only_eval-t6"
 
     print(exp_name)
     exp_name = "{}-{}-{:03}".format(exp_name, timestamp, exp_count)
-    log_dir = '/scratch/alexis/data/' + exp_prefix + "/" + exp_name
+    log_dir = '/project_data/held/ahao/data/' + exp_prefix + "/" + exp_name
 
     run_task(vg, log_dir=log_dir, exp_name=exp_name)
     #eval()

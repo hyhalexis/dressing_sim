@@ -28,7 +28,7 @@ from sklearn.metrics import accuracy_score
 from encoder import make_encoder
 import copy
 
-device = 'cuda:0'
+device = 'cuda:3'
 LOG_FREQ = 10000
 
 def gen_net(in_size=1, out_size=1, H=128, n_layers=3, activation='tanh'):
