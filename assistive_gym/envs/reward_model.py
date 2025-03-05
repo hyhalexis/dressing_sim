@@ -28,7 +28,7 @@ from sklearn.metrics import accuracy_score
 from encoder import make_encoder
 import copy
 
-device = 'cuda:3'
+device = 'cuda:2'
 LOG_FREQ = 10000
 
 def gen_net(in_size=1, out_size=1, H=128, n_layers=3, activation='tanh'):
@@ -156,11 +156,12 @@ class PC2Reward(nn.Module):
 
         self.encoder_type = encoder_type
         new_args = copy.deepcopy(args)
+        new_args.pc_feature_dim = new_args.reward_pc_feature_dim
         if use_action:
             if args.action_mode == 'rotation' and 'flow' in args.encoder_type:
-                new_args.pc_feature_dim += 6
+                new_args.reward_pc_feature_dim += 6
             else:
-                new_args.pc_feature_dim += action_shape[0]
+                new_args.reward_pc_feature_dim += action_shape[0]
         encoder_type = 'pointcloud'
         new_args.encoder_type = encoder_type
         self.use_action = use_action
@@ -168,7 +169,7 @@ class PC2Reward(nn.Module):
         # print("Critic -- Encoder feature dim: ", encoder_feature_dim)
         # print("Critic -- Num layers: ", num_layers)
         # print("Critic -- Num filters: ", num_filters)
-        # print("Critic -- args.feature_dim: ", args.pc_feature_dim)
+        # print("Critic -- args.feature_dim: ", args.reward_pc_feature_dim)
         # print("Critic -- args.pc_num_layers: ", args.pc_num_layers)
         # print("Critic -- args.sa_radius: ", args.sa_radius)
         # print("Critic -- args.sa_ratio: ", args.sa_ratio)

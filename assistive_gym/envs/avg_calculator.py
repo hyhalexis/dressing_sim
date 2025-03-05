@@ -4,7 +4,7 @@ from statistics import mean
 
 # Folder containing the files
 # folder_path = "/scratch/alexis/data/2024-1222-pybullet-eval-ckpt/eval-p1-force-with-joint-rand-12_23_00_29_54-000/gifs"
-folder_path = "/scratch/alexis/data/traj_data_with_one-hot_force_reconstr/gifs"
+folder_path = "/project_data/held/ahao/data/traj_data_with_one-hot_reconstr_flex-72585/gifs"
 # Initialize dictionaries to store `ww` values for each category
 p1_ww_values = []
 p2_ww_values = []

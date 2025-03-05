@@ -18,10 +18,10 @@ from scipy.spatial.transform import Rotation as R
 
 import copy
 
-class DressingEnvData(AssistiveEnv):
+class DressingEnv(AssistiveEnv):
     def __init__(self, robot, human, use_ik=True, policy=2, horizon=150, camera_pos = 'side', occlusion = True, render=False, one_hot = False, reconstruct = False, gif_path=None, use_force=False, elbow_rand=-90, shoulder_rand=80):
     # def __init__(self, robot, human, use_ik=True, policy=2, horizon=150, motion=1, garment=1, camera_pos = 'side', render=False):
-        super(DressingEnvData, self).__init__(robot=robot, human=human, task='dressing', obs_robot_len=(16 + len(robot.controllable_joint_indices) - (len(robot.wheel_joint_indices) if robot.mobile else 0)), obs_human_len=(16 + (len(human.controllable_joint_indices) if human is not None else 0)), frame_skip=1, time_step=0.02, deformable=True, render=render)
+        super(DressingEnv, self).__init__(robot=robot, human=human, task='dressing', obs_robot_len=(16 + len(robot.controllable_joint_indices) - (len(robot.wheel_joint_indices) if robot.mobile else 0)), obs_human_len=(16 + (len(human.controllable_joint_indices) if human is not None else 0)), frame_skip=1, time_step=0.02, deformable=True, render=render)
         self.use_ik = use_ik
         self.use_mesh = (human is None)
         self.arm_traj_idx = 0
@@ -59,12 +59,11 @@ class DressingEnvData(AssistiveEnv):
         self.all_direction = 0
         self.useNeoHookean = 1
 
-        self.step_img = None
-        self.step_gripper_pos = None
-        self.step_line_pts = []
-
         # self.arm_points = np.zeros((1,3))
         # self.collision_kd_tree = scipy.spatial.KDTree(self.arm_points)
+
+        self.on_forearm = False
+        self.on_upperarm = False
 
         self.line1_extend_factor = 0.1
 
@@ -82,6 +81,8 @@ class DressingEnvData(AssistiveEnv):
 
         self.elbow_rand = elbow_rand
         self.shoulder_rand = shoulder_rand
+
+        self.ee_pose = np.zeros((1,3))
 
 
         # 1 skip, 0.1 step, 50 substep, springElasticStiffness=100 # ? FPS
@@ -111,7 +112,7 @@ class DressingEnvData(AssistiveEnv):
             if self.cloth_force_vector.shape[0] == 1:
                 print('WTFFFFFFF', self.cloth_force_vector)
             self.cloth_force_vector = self.cloth_force_vector.reshape(-1, 3)
-        
+
         self.cloth_force_vector = self.cloth_force_vector[:, [1, 2, 0]]
 
         cloth_shoulder_polygon_particle_pos = mesh_points[self.shoulder_polygon_indices]
@@ -383,9 +384,6 @@ class DressingEnvData(AssistiveEnv):
         self.line1_ori, self.line2_ori = line_points[1], line_points[2] # elbow, shoulder
         self.line1_dir, self.line2_dir = line1 / np.linalg.norm(line1), line2 / np.linalg.norm(line2)
         self.line_points = line_points
-
-        self.step_gripper_pos = end_effector_pos
-        self.step_line_pts = line_points
         
         # if self.camera_pos == 'front':
         #     self.setup_camera_rpy(camera_target=[-0.31471434, -0.2672464, 1.00759685], distance=0.7, rpy=[0, -25, 0], fov=60, camera_width=1080, camera_height=720)
@@ -560,6 +558,7 @@ class DressingEnvData(AssistiveEnv):
 
         end_effector_pos = end_effector_pos.reshape(-1, 3)
         end_effector_pos = end_effector_pos[:, [1 ,2 ,0]]
+        self.ee_pose = end_effector_pos
 
         if self.verbose:
             fig = plt.figure()
@@ -625,25 +624,40 @@ class DressingEnvData(AssistiveEnv):
 
             else:
                 if self.one_hot:
-                    partial_pc = np.concatenate([self.voxelized_observable_arm_pc, self.voxelized_observable_cloth_pc], axis=0)
-                    all_points = np.concatenate([partial_pc, end_effector_pos], axis=0)
-                    all_points = all_points - end_effector_pos
-                    categories = np.zeros((all_points.shape[0], 3))
-                    categories[:len(self.voxelized_observable_arm_pc), 0] = 1 # arm
-                    categories[len(self.voxelized_observable_arm_pc):len(self.voxelized_observable_arm_pc) + len(self.voxelized_observable_cloth_pc), 1] = 1 # cloth
-                    categories[len(self.voxelized_observable_arm_pc) + len(self.voxelized_observable_cloth_pc):, 2] = 1 # gripper
-                    data = Data(pos=torch.from_numpy(all_points).float(), x=torch.from_numpy(categories).float())
+                    if self.reconstruct:
+                        partial_pc = np.concatenate([self.voxelized_observable_arm_pc, self.voxelized_observable_cloth_pc], axis=0)
+                        scene_pc = np.concatenate([partial_pc, self.distort_arm_pc], axis=0)
+                        all_points = np.concatenate([scene_pc, end_effector_pos], axis=0)
+                        all_points = all_points - end_effector_pos
+                        categories = np.zeros((all_points.shape[0], 4))
+                        categories[:len(self.voxelized_observable_arm_pc), 0] = 1
+                        categories[len(self.voxelized_observable_arm_pc):len(self.voxelized_observable_arm_pc) + len(self.voxelized_observable_cloth_pc), 1] = 1
+                        categories[partial_pc.shape[0]:scene_pc.shape[0], 2] = 1
+                        categories[scene_pc.shape[0]:, 3] = 1
+                        data = Data(pos=torch.from_numpy(all_points).float(), x=torch.from_numpy(categories).float())
+                    else:
+                        partial_pc = np.concatenate([self.voxelized_observable_arm_pc, self.voxelized_observable_cloth_pc], axis=0)
+                        all_points = np.concatenate([partial_pc, end_effector_pos], axis=0)
+                        all_points = all_points - end_effector_pos
+                        categories = np.zeros((all_points.shape[0], 3))
+                        categories[:len(self.voxelized_observable_arm_pc), 0] = 1 # arm
+                        categories[len(self.voxelized_observable_arm_pc):len(self.voxelized_observable_arm_pc) + len(self.voxelized_observable_cloth_pc), 1] = 1 # cloth
+                        categories[len(self.voxelized_observable_arm_pc) + len(self.voxelized_observable_cloth_pc):, 2] = 1 # gripper
+                        data = Data(pos=torch.from_numpy(all_points).float(), x=torch.from_numpy(categories).float())
 
-                    scene_pc = np.concatenate([partial_pc, self.distort_arm_pc], axis=0)
-                    rec_points = np.concatenate([scene_pc, end_effector_pos], axis=0)
-                    rec_points = rec_points - end_effector_pos
-                    rec_categories = np.zeros((rec_points.shape[0], 5))
-                    rec_categories[:len(self.voxelized_observable_arm_pc), 0] = 1
-                    rec_categories[len(self.voxelized_observable_arm_pc):len(self.voxelized_observable_arm_pc) + len(self.voxelized_observable_cloth_pc), 1] = 1
-                    rec_categories[partial_pc.shape[0]:scene_pc.shape[0], 2] = 1
-                    rec_categories[scene_pc.shape[0]:, 3] = 1
-                    rec_categories[scene_pc.shape[0]:, 4] = self.total_force_on_human
-                    self.complete_data = Data(pos=torch.from_numpy(rec_points).float(), x=torch.from_numpy(rec_categories).float())
+                        if self.distort_arm_pc.ndim == 1:
+                            print('ERRORRRRRR', self.distort_arm_pc.ndim)
+
+                        # scene_pc = np.concatenate([partial_pc, self.distort_arm_pc], axis=0)
+                        # rec_points = np.concatenate([scene_pc, end_effector_pos], axis=0)
+                        # rec_points = rec_points - end_effector_pos
+                        # rec_categories = np.zeros((rec_points.shape[0], 5))
+                        # rec_categories[:len(self.voxelized_observable_arm_pc), 0] = 1
+                        # rec_categories[len(self.voxelized_observable_arm_pc):len(self.voxelized_observable_arm_pc) + len(self.voxelized_observable_cloth_pc), 1] = 1
+                        # rec_categories[partial_pc.shape[0]:scene_pc.shape[0], 2] = 1
+                        # rec_categories[scene_pc.shape[0]:, 3] = 1
+                        # rec_categories[scene_pc.shape[0]:, 4] = self.total_force_on_human
+                        # self.complete_data = Data(pos=torch.from_numpy(rec_points).float(), x=torch.from_numpy(rec_categories).float())
 
                 else:
                     partial_pc = np.concatenate([self.voxelized_observable_arm_pc, self.voxelized_observable_cloth_pc], axis=0)
@@ -723,7 +737,7 @@ class DressingEnvData(AssistiveEnv):
         return data, torch.from_numpy(self.cloth_force_vector).float()
 
     def reset(self, garment_id=1, motion_id=0, pose_id=-1, step_idx=0):
-        super(DressingEnvDataData, self).reset()
+        super(DressingEnv, self).reset()
         self.garment_id = int(garment_id)
         self.motion_id = int(motion_id)
         self.pose_id = int(pose_id)
@@ -889,7 +903,7 @@ class DressingEnvData(AssistiveEnv):
         
         # self.cloth = p.loadSoftBody(path_to_garment, scale=cloth_scales[garment], mass=0.16, useNeoHookean=0, useBendingSprings=1, useMassSpring=1, springElasticStiffness=10, springDampingStiffness=0.1, springDampingAllDirections=0, springBendingStiffness=0.1, useSelfCollision=1, collisionMargin=0.001, frictionCoeff=0.5, useFaceContact=1, physicsClientId=self.id)
         # p.clothParams(self.cloth, kLST=0.055, kAST=1.0, kVST=0.5, kDP=0.01, kDG=10, kDF=0.39, kCHR=1.0, kKHR=1.0, kAHR=1.0, piterations=5, physicsClientId=self.id)
-        self.cloth = p.loadSoftBody(path_to_garment, scale=cloth_scales[garment]*0.8, mass=0.16, useNeoHookean=self.useNeoHookean, useBendingSprings=1, useMassSpring=1, springElasticStiffness=self.elastic_stiffness, springDampingStiffness=self.damping_stiffness, springDampingAllDirections=self.all_direction, springBendingStiffness=self.bending_stiffnes, useSelfCollision=1, collisionMargin=0.001, frictionCoeff=0.1, useFaceContact=1, physicsClientId=self.id)
+        self.cloth = p.loadSoftBody(path_to_garment, scale=cloth_scales[garment]*0.8, mass=0.5, useNeoHookean=self.useNeoHookean, useBendingSprings=1, useMassSpring=1, springElasticStiffness=self.elastic_stiffness, springDampingStiffness=self.damping_stiffness, springDampingAllDirections=self.all_direction, springBendingStiffness=self.bending_stiffnes, useSelfCollision=1, collisionMargin=0.001, frictionCoeff=0.1, useFaceContact=1, physicsClientId=self.id)
         p.changeVisualShape(self.cloth, -1, rgbaColor=[1, 1, 1, 1], flags=0, physicsClientId=self.id)
         p.changeVisualShape(self.cloth, -1, flags=p.VISUAL_SHAPE_DOUBLE_SIDED, physicsClientId=self.id)
         p.setPhysicsEngineParameter(numSubSteps=8, physicsClientId=self.id)
@@ -1340,9 +1354,3 @@ class DressingEnvData(AssistiveEnv):
 
         else:
             print('Invalid motion id')
-
-
-
-            
-
-

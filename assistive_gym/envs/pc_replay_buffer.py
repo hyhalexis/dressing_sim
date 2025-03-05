@@ -171,9 +171,6 @@ class PointCloudReplayBuffer():
         not_dones = np.array(self.not_dones)
         rewards_pref = np.array(self.rewards_pref)
         force_vectors = list(itemgetter(*idxs)(self.force_vectors))
-        all_tensors = all(isinstance(el, torch.Tensor) for el in force_vectors)
-        if not all_tensors:
-            print(force_vectors)
         force_vectors = torch.stack(force_vectors).to(self.device)
         
         rewards = torch.as_tensor(rewards[idxs], device=self.device)
@@ -467,7 +464,6 @@ class PointCloudReplayBuffer():
         file_nos = [os.path.join(data_dir, file_no) for file_no in file_nos]
         # sampled_files = random.sample(file_nos, min(200, len(file_nos)))
 
-
         obses = []
         next_obses = []
         actions = []
@@ -477,6 +473,8 @@ class PointCloudReplayBuffer():
         forces = []
         ori_obses = []
         force_vectors = []
+        reward_obses = []
+        next_reward_obses = []
 
         for file in tqdm(file_nos, desc="Loading trajectory files"):
             # print("Loading file ", file)
@@ -497,10 +495,18 @@ class PointCloudReplayBuffer():
             for i in range(len(traj)):
                 # Add transition components directly to lists
                 transition = traj[i]
-                # next_transition = traj[i+1] if i < len(traj)-1 else traj[i]
+                next_transition = traj[i+1] if i < len(traj)-1 else traj[i]
 
-                obses.append(transition['obs'])
-                next_obses.append(transition['new_obs'])
+                # obses.append(transition['obs'])
+                # next_obses.append(transition['new_obs'])
+
+                obs = copy.deepcopy(transition['reward_obs'])
+                obs.x = obs.x[:, :3]
+                obses.append(obs)
+
+                new_obs = copy.deepcopy(next_transition['reward_obs'])
+                new_obs.x = new_obs.x[:, :3]
+                next_obses.append(new_obs)
 
                 # ori_obses.append(transition['obs'])
 
@@ -519,23 +525,44 @@ class PointCloudReplayBuffer():
                 not_dones.append(1.0 if i < len(traj) - 1 else 0.0)  # Last transition gets not_done = 0
                 non_randomized_obses.append(None)
                 forces.append(transition['total_force'])
-                force_vectors.append(transition['cloth_force_vector'])
+                force_vectors.append(torch.from_numpy(transition['cloth_force_vector']).float())
+                reward_obses.append(transition['reward_obs'])
+                next_reward_obses.append(next_transition['reward_obs'])
 
                 # if np.isscalar(transition['cloth_force_vector']) and transition['cloth_force_vector']  == 0:
                 #     transition['cloth_force_vector'] = np.zeros(3)
                 # force_vectors.append(torch.from_numpy(transition['cloth_force_vector'][[1, 2, 0]]).float())
         
-        payload = [obses, next_obses, actions, rewards, not_dones, non_randomized_obses, forces, ori_obses, force_vectors]
-        torch.save(payload, '/scratch/alexis/data/payload_film_force_simple_tiny')
+        payload = [obses, next_obses, actions, rewards, not_dones, non_randomized_obses, forces, ori_obses, force_vectors, reward_obses, next_reward_obses]
+        torch.save(payload, '/project_data/held/ahao/data/payload_one-hot_film-on-force')
 
     def load2(self, data_dir):
         # self.save_as_payload(data_dir)
         payload = torch.load(data_dir)
 
+        # payload = torch.load('/project_data/held/ahao/data/payload_one-hot_film-on-force')
+
         # Convert lists to tensors
+        # temp = []
+        # for idx in range(len(payload[11])):
+        #     obs = copy.deepcopy(payload[11][idx])
+        #     obs.x = obs.x[:, :4]
+        #     temp.append(obs)
+        # self.obses = temp
+
+        # temp = []
+        # for idx in range(len(payload[12])):
+        #     next_obs = copy.deepcopy(payload[12][idx])
+        #     next_obs.x = next_obs.x[:, :4]
+        #     temp.append(next_obs)
+        # self.next_obses = temp
+
         self.obses = payload[0]
         self.next_obses = payload[1]
-        self.ori_actions = [action.reshape(-1, 6) for action in payload[2]]
+        self.reward_obses = payload[9]
+        self.next_reward_obses = payload[10]
+
+        # self.ori_actions = [action.reshape(-1, 6) for action in payload[2]]
         temp = []
         for idx in range(len(payload[2])):
             obs_size = self.obses[idx].x.shape[0]
@@ -543,21 +570,35 @@ class PointCloudReplayBuffer():
             actions = np.tile(action, (obs_size, 1))
             temp.append(actions)
         self.actions = temp
+
+        temp = []
+        for idx in range(len(payload[2])):
+            reward_obs_size = self.reward_obses[idx].x.shape[0]
+            action = payload[2][idx].reshape(-1, 6)[-1]
+            actions = np.tile(action, (reward_obs_size, 1))
+            temp.append(actions)
+        self.reward_actions = temp
+
+        # self.actions = [action.reshape(-1, 6) for action in payload[2]]
         # self.actions = [action.reshape(-1, 6) for action in payload[2]]
         self.rewards = payload[3]
         self.not_dones = payload[4]
         self.non_randomized_obses = payload[5]
         self.forces = payload[6]
         self.ori_obses = payload[7]
+        temp = []
         self.force_vectors = payload[8]
+        # for force_vec in force_vectors:
+        #     temp.append(force_vec.flatten())
+        # self.force_vectors = temp
+
+        # print('shape', self.force_vectors[0].shape)
         c = 0
         for f in self.force_vectors:
             if not isinstance(f, torch.Tensor):
                 print(f)
                 c+=1
-        print(c)
-        
-        
+        print(c)        
 
         # temp = []
         # actions_gripper = payload[2]
@@ -640,17 +681,19 @@ class PointCloudReplayBuffer():
             print("process - Size after making into concat act1:", act_1.shape)
             print("process - Batch size of obs1:", obs_1.batch)
         
-        gripper_idx = 1 # reward model idx
+        gripper_idx = self.args.reward_gripper_idx # reward model idx
         for b_idx in obs_1.batch:
             act_1[(obs_1.batch == b_idx)] = act_1[(obs_1.batch == b_idx) & (obs_1.x[:, gripper_idx] == 1)]
         return obs_1, act_1
     
     def relabel_rewards(self, reward_model1, reward_model2):
         for i in tqdm(range(self.idx)):
-            obs, action, reward, done, next_obs = self.obses[i], self.actions[i], self.rewards[i], self.not_dones[i], self.next_obses[i]
+            obs, action, reward, done, next_obs, reward_obs, reward_action = self.obses[i], self.actions[i], self.rewards[i], self.not_dones[i], self.next_obses[i], self.reward_obses[i], self.reward_actions[i]
             # obs = ori_obs.to(self.device)
             
-            obs = obs.to(self.device)
+            # obs = obs.to(self.device)
+
+            obs = reward_obs.to(self.device)
 
             # obs_force = copy.deepcopy(ori_obs)
             # obs_force = obs_force.to(self.device)
@@ -658,7 +701,7 @@ class PointCloudReplayBuffer():
             # obs_force.x[-1, 3] = force
             # ori_obs = obs_force.to(self.device)
 
-            obs, act = self.process([obs], [action], device=self.device)
+            obs, act = self.process([obs], [reward_action], device=self.device)
             reward = reward
             done = done
             with torch.no_grad():

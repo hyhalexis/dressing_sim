@@ -1,5 +1,5 @@
 from dressing import DressingEnv
-from dressing_data import DressingEnvData
+# from dressing_data import DressingEnvData
 
 from agents import sawyer, human
 from agents.sawyer import Sawyer
@@ -19,7 +19,7 @@ class DressingSawyerHumanEnv(DressingEnv, MultiAgentEnv):
         super(DressingSawyerHumanEnv, self).__init__(robot=Sawyer(robot_arm), human=Human(human_controllable_joint_indices, controllable=True), **kwargs)
 register_env('assistive_gym:DressingSawyerHuman-v1', lambda config: DressingSawyerHumanEnv())
 
-class DressingSawyerHumanEnvData(DressingEnvData, MultiAgentEnv):
-    def __init__(self, **kwargs):
-        super(DressingSawyerHumanEnvData, self).__init__(robot=Sawyer(robot_arm), human=Human(human_controllable_joint_indices, controllable=True), **kwargs)
-register_env('assistive_gym:DressingSawyerHumanEnvDataCollection', lambda config: DressingSawyerHumanEnvData())
+# class DressingSawyerHumanEnvData(DressingEnvData, MultiAgentEnv):
+#     def __init__(self, **kwargs):
+#         super(DressingSawyerHumanEnvData, self).__init__(robot=Sawyer(robot_arm), human=Human(human_controllable_joint_indices, controllable=True), **kwargs)
+# register_env('assistive_gym:DressingSawyerHumanEnvDataCollection', lambda config: DressingSawyerHumanEnvData())

@@ -13,8 +13,12 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 from PIL import Image
 import numpy as np
+import torch
+
 import wandb
 from chester.run_exp import run_experiment_lite, VariantGenerator
+from collections import deque
+
 
 from torch_geometric.data import Batch
 from chester import logger
@@ -23,6 +27,7 @@ from default_config import DEFAULT_CONFIG
 from logger import Logger
 from iql_pointcloud import IQLAgent
 from dressing_envs import DressingSawyerHumanEnv
+from train_force_dynamics_model import make_agent as make_agent_force
 
 import multiprocessing as mp
 from multiprocessing import Pool
@@ -165,31 +170,47 @@ def evaluate(arg):
     #     reconstruct = True
     # else:
     #     reconstruct = False
-    reconstruct = True
 
-    if step <= 1:
-        use_force = True
+    # if step <= 1:
+    #     use_force = True
+    # else:
+    #     use_force = False
+
+    if step == 1:
+        args.use_force = True
     else:
-        use_force = False
-
+        args.use_force = False
 
     def run_eval_loop():
         # Note
         # env = DressingSawyerHumanEnv(policy=args.policy, horizon=args.horizon, camera_pos=args.camera_pos, occlusion=args.occlusion, rand=args.rand, render=args.render, gif_path=args.gif_path)
-        env = DressingSawyerHumanEnv(policy=int(step), horizon=args.horizon, camera_pos=args.camera_pos, occlusion=args.occlusion, render=args.render, gif_path=args.gif_path, reconstruct=reconstruct, use_force=use_force, elbow_rand=elbow_rand, shoulder_rand=shoulder_rand)
+        env = DressingSawyerHumanEnv(policy=int(step), horizon=args.horizon, camera_pos=args.camera_pos, occlusion=args.occlusion, render=args.render, gif_path=args.gif_path, one_hot=args.one_hot, reconstruct=args.reconstruct, use_force=args.use_force, mass=args.mass, friction=args.friction, repulsion=args.repulsion, elbow_rand=elbow_rand, shoulder_rand=shoulder_rand)
 
-        obs = env.reset(garment_id=garment_id, motion_id=motion_id, pose_id=pose_id, step_idx = step)
+        obs, force_vector = env.reset(garment_id=garment_id, motion_id=motion_id, pose_id=pose_id, step_idx = step)
         done = False
         episode_reward = 0
         ep_info = []
         rewards = []
+        traj_dataset = []
+
+        if step == 0:
+            force_history = deque([], maxlen=5)
+            for i in range(5):
+                force_history.append(0)
+            force_history.append(force_vector.sum())
         
         t = 0
         while not done:
             print('------Iteration', t)
 
             with utils.eval_mode(agent):
-                action = agent.select_action(obs)
+                if step == 0:
+                    if env.on_forearm or env.on_upperarm:
+                        action, progression_direction, predicted_force = agent.plan_action_constrain_force(obs, force_vector, np.array(force_history))
+                    else:
+                        action = agent.sample_action(obs, force_vector)
+                else:
+                        action = agent.select_action(obs, force_vector)
             step_action = action.reshape(-1, 6)[-1].flatten()
             # step_action[3] = 0
 
@@ -216,11 +237,26 @@ def evaluate(arg):
                     dtheta *= max_rot_axis_ang / np.sqrt(3)
                 step_action[3:] *= dtheta
 
-            obs, reward, done, info = env.step(step_action)
+            obs, reward, done, info, force_vector = env.step(step_action)
+            if step == 0:
+                force_history.append(force_vector.sum())
+
+            step_data = {
+                'step_action': step_action,
+                "gripper_pos": env.ee_pose,
+                'force_vector': force_vector,
+
+            }
+            traj_dataset.append(step_data)
+
             episode_reward += reward
             ep_info.append(info)
             rewards.append(reward)
             t += 1
+
+        with open(os.path.join(args.traj_dir, 'p{}_motion{}_{}_{}_{}_{}_{}_{}.pkl'.format(int(step), env.motion_id, env.camera_pos, env.garment, int(env.shoulder_rand), int(env.elbow_rand), info['whole_arm_ratio'], info['upperarm_ratio'])), 'wb') as f:
+            pickle.dump(traj_dataset, f, protocol=pickle.HIGHEST_PROTOCOL)
+
         env.disconnect()
         return info['upperarm_ratio']
         
@@ -307,8 +343,8 @@ def make_agent(obs_shape, action_shape, args, device, agent="IQL"):
 
 def main(args):
     mp.set_start_method('forkserver', force=True)
-    import tempfile
-    tempfile.tempdir = '/scratch/alexis/tmp'
+    # import tempfile
+    # tempfile.tempdir = '/scratch/alexis/tmp'
     if args.seed == -1:
         args.__dict__["seed"] = np.random.randint(1, 1000000)
     utils.set_seed_everywhere(args.seed)
@@ -323,18 +359,17 @@ def main(args):
     ts = time.strftime("%m-%d", ts)
 
     # create replay buffer
-    # device = torch.device('cuda:{}'.format(args.cuda_idx) if torch.cuda.is_available() else 'cpu')
-    device = 'cuda:0'
+    device = torch.device('cuda:{}'.format(args.cuda_idx) if torch.cuda.is_available() else 'cpu')
+    print('device', device)
     action_shape = (6,)
     obs_shape = (30000,)
-    
-    # folder_path = "/scratch/alexis/data/2024-1205-pybullet-finetuning/iql-training-p1-reward_model1-only-12_05_07_16_53-000/model"
-    folder_path = "/scratch/alexis/data/2024-1205-pybullet-finetuning/iql-training-p2-reward_model1-only-12_05_05_50_38-000/model"
-    
+        
      # Note
     dir = logger.get_dir()
 
-    # dir = os.path.dirname(folder_path)
+    args.traj_dir = '{}/trajs'.format(dir)
+    if not os.path.exists(args.traj_dir):
+        os.makedirs(args.traj_dir)
 
     L = Logger(dir, use_tb=args.save_tb, chester_logger=logger)
 
@@ -342,20 +377,6 @@ def main(args):
     os.makedirs(gif_path, exist_ok=True)
     print('Saving gifs at: ', gif_path)
     args.gif_path = gif_path
-    import re
-        # Regular expression pattern to match 'actor_xxx.pt' where xxx is a number
-    filename_pattern = re.compile(r"actor_(\d+)\.pt$")
-
-    # # List to store the matching filenames
-    # lst = [30000, 40000, 50000, 60000, 110000, 140000, 150000, 160000, 170000, 190000, 210000, 220000]
-
-    agents = []
-
-    # Iterate through all files in the folder
-    for filename in os.listdir(folder_path):
-        if filename_pattern.match(filename) and int(filename_pattern.match(filename).group(1)) > 70000:  # If the filename matches the pattern
-            agents.append(filename)
-    agents.sort(key=lambda x: int(filename_pattern.match(x).group(1)))
 
     # Note
     # agents_ckpts = []
@@ -363,8 +384,16 @@ def main(args):
     # for agent in agents:
     #     agents_ckpts.append(os.path.join(folder_path, agent))
 
-    agents_ckpts = ["/scratch/alexis/data/2025-0104-pybullet-from-scratch/iql-training-from-scratch-force-reconstr-01_05_09_01_48-000/model/actor_best_test_400000_0.88345.pt",
-                    "/scratch/alexis/data/2025-0110-pybullet-from-scratch/iql-training-from-scratch-force-reconstr-reduced-data-01_11_06_42_34-000/model/actor_best_test_280000_0.82393.pt"
+    agents_ckpts = [
+                    "/home/ahao/assistive-gym-fem/assistive_gym/envs/ckpt_one-hot/actor_best_test_750137_0.75036.pt",
+                    "/home/ahao/assistive-gym-fem/assistive_gym/envs/ckpt_one-hot_force_scratch/actor_best_test_210000_0.949.pt",
+                    "/home/ahao/assistive-gym-fem/assistive_gym/envs/ckpt_one-hot/actor_best_test_750137_0.75036.pt",
+                    "/home/ahao/assistive-gym-fem/assistive_gym/envs/ckpt_one-hot_film_no-force/actor_40000.pt",
+                    "/home/ahao/assistive-gym-fem/assistive_gym/envs/ckpt_one-hot_film_force/actor_best_test_20000_0.99791.pt",
+                    
+                    # "/home/ahao/assistive-gym-fem/assistive_gym/envs/ckpt_one-hot_film_force/actor_best_test_20000_0.99791.pt"
+                    # "/scratch/alexis/data/2025-0104-pybullet-from-scratch/iql-training-from-scratch-force-reconstr-01_05_09_01_48-000/model/actor_best_test_400000_0.88345.pt",
+                    # "/scratch/alexis/data/2025-0110-pybullet-from-scratch/iql-training-from-scratch-force-reconstr-reduced-data-01_11_06_42_34-000/model/actor_best_test_280000_0.82393.pt"
                     # "/scratch/alexis/data/2024-1220-pybullet-from-scratch/iql-training-from-scratch-with-force-p1-only-12_20_16_20_55-000/model/actor_best_test_80000_0.91073.pt",
                     # "/home/alexis/assistive-gym-film/assistive_gym/envs/ckpt/actor_1900106.pt",
 
@@ -379,28 +408,44 @@ def main(args):
     agents = []
     import re
 
-    for _ in range(5):
+    for idx in range(10):
+        # if idx == 0:
+        #     elbow_rand = -90
+        #     shoulder_rand = 80
+        # else:
         rng = np.random.default_rng()
         elbow_rand = np.round(-90 + rng.uniform(-10, 10), 2)
         shoulder_rand = np.round(80 + rng.uniform(-5, 5), 2)
 
         i = 0
         for ckpt in agents_ckpts:
-            if i == 0:
-                args.pc_feature_dim = 4
-            elif i == 1:
-                args.pc_feature_dim = 4 #3
+            if i == 4:
+                args.film_force = True
             else:
-                args.pc_feature_dim = 2
+                args.film_force = False
 
+            if i == 1:
+                args.pc_feature_dim = 4
+            else:
+                args.pc_feature_dim = 3
 
-            agent = make_agent(
+            if i == 0:
+                agent = make_agent_force(
                 obs_shape=obs_shape,
                 action_shape=action_shape,
                 args=args,
-                device=device
-            )
-            agent.load_actor_ckpt(ckpt)
+                device=device,
+                actor_load_name=ckpt,
+                force_critic_load_name='/home/ahao/assistive-gym-fem/assistive_gym/envs/ckpt_force_critic/force_critic_2000.pt'
+                )
+            else:
+                agent = make_agent(
+                    obs_shape=obs_shape,
+                    action_shape=action_shape,
+                    args=args,
+                    device=device
+                )
+                agent.load_actor_ckpt(ckpt)
             # match = re.search(r'(\d+)(?=\D*$)', ckpt)
             # if match:
             #     step = int(match.group(1))
@@ -431,7 +476,7 @@ def main(args):
         L.log('eval-number', episode, step)
 
         # Note
-        parallel_evaluator = ParallelEvaluator(num_workers=int(len(pairs)))
+        parallel_evaluator = ParallelEvaluator(num_workers=int(len(pairs)/2))
         dressed_ratios = parallel_evaluator.evaluate_agents(agent, step, elbow_rand, shoulder_rand, pairs, args)
         parallel_evaluator.close()
 
@@ -444,8 +489,8 @@ def main(args):
 if __name__ == "__main__":
     mp.set_start_method('spawn', force=True)
         
-    exp_prefix =  '2025-0113-pybullet-eval-ckpt'
-    load_variant_path = '/home/alexis/assistive-gym-film/assistive_gym/envs/variant_eval.json'
+    exp_prefix =  '2025-0304-pybullet-eval-baselines'
+    load_variant_path = '/home/ahao/assistive-gym-fem/assistive_gym/envs/variant_eval.json'
     loaded_vg = create_vg_from_json(load_variant_path)
     print("Loaded configs from ", load_variant_path)
     vg = loaded_vg
@@ -455,12 +500,12 @@ if __name__ == "__main__":
 
     exp_count = 0
     timestamp = now.strftime('%m_%d_%H_%M_%S')
-    exp_name = "eval-reconstr-force-with-joint-rand-unseen-motions-small"
+    exp_name = "eval-all-baseline+ours-0.01_thresh_for_fcvp"
     # exp_name = "iql-training-p1-reward_model1-only_eval-t6"
 
     print(exp_name)
     exp_name = "{}-{}-{:03}".format(exp_name, timestamp, exp_count)
-    log_dir = '/scratch/alexis/data/' + exp_prefix + "/" + exp_name
+    log_dir = '/project_data/held/ahao/data/' + exp_prefix + "/" + exp_name
 
     run_task(vg, log_dir=log_dir, exp_name=exp_name)
     #eval()

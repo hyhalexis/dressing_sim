@@ -41,6 +41,7 @@ class Net(torch.nn.Module):
             fp_k=[1, 3, 3],
             use_batch_norm=False,
             residual_learning=False, # if we are learning just a residual upon a nominal thing
+            use_film = False
         ):
         super(Net, self).__init__()
 
@@ -79,11 +80,14 @@ class Net(torch.nn.Module):
 
 
         self.sa_latent_dim = sa_mlp_list[-1][-1]
+        self.use_film = use_film
 
-        self.film_layers = nn.ModuleList()
-        self.film_layers.append(nn.Linear(3, 2*sa_mlp_list[self.num_layer-1][-1]))
-        for l_idx in range(self.num_layer):
-            self.film_layers.append(nn.Linear(3, 2*fp_mlp_list[l_idx][-1]))
+        if self.use_film:
+            print('FILMMMMMM!!!!!')
+            self.film_layers = nn.ModuleList()
+            self.film_layers.append(nn.Linear(3, 2*sa_mlp_list[self.num_layer-1][-1]))
+            for l_idx in range(self.num_layer):
+                self.film_layers.append(nn.Linear(3, 2*fp_mlp_list[l_idx][-1]))
 
         # self.film_net = nn.Linear(3, 2*sa_mlp_list[self.num_layer-1][-1])
 
@@ -101,22 +105,24 @@ class Net(torch.nn.Module):
             sa_out = self.sa_module_list[i](*sa_out)
             if i == self.num_layer - 1:
                 x, pos, batch, indices = sa_out
-                # print(f"force_vector dtype: {force_vector.dtype}")
-                # print(f"film_net dtype: {self.film_net.weight.dtype}")
-                # print('force', force_vector.shape)
-                film_out = self.film_layers[0](force_vector.to(torch.float32))
-                # print('out', film_out.shape)
-                gammas, betas = torch.split(film_out, int(film_out.shape[1]/2), dim=1)
+                if self.use_film:
+                    # print(f"force_vector dtype: {force_vector.dtype}")
+                    # print(f"film_net dtype: {self.film_layers[0].weight.dtype}")
+                    # print('force', force_vector.shape)
+                    force_vector = force_vector.squeeze(1)
+                    film_out = self.film_layers[0](force_vector.to(torch.float32))
+                    # print('out', film_out.shape)
+                    gammas, betas = torch.split(film_out, int(film_out.shape[1]/2), dim=1)
 
-                # print('gammas', gammas.shape)
-                # print('x', x.shape)
-                # print('pos', x.shape)
+                    # print('gammas', gammas.shape)
+                    # print('x', x.shape)
+                    # print('pos', x.shape)
 
-                gammas = gammas.mean(dim=0).unsqueeze(0).expand(x.shape[0], -1)
-                # print('gammas2', gammas.shape)
-                betas = betas.mean(dim=0).unsqueeze(0).expand(x.shape[0], -1)
-                x = gammas * x + betas
-                # print('x2', x.shape)
+                    gammas = gammas.mean(dim=0).unsqueeze(0).expand(x.shape[0], -1)
+                    # print('gammas2', gammas.shape)
+                    betas = betas.mean(dim=0).unsqueeze(0).expand(x.shape[0], -1)
+                    x = gammas * x + betas
+                    # print('x2', x.shape)
                 sa_out =  x, pos, batch
             else:
                 x, pos, batch = sa_out
@@ -124,25 +130,27 @@ class Net(torch.nn.Module):
 
         fp_out = self.fp_module_list[0](*sa_outs[-1], *sa_outs[-2])
 
-        x, pos_skip, batch_skip = fp_out
-        film_out = self.film_layers[1](force_vector.to(torch.float32))
-        gammas, betas = torch.split(film_out, int(film_out.shape[1]/2), dim=1)
-        gammas = gammas.mean(dim=0).unsqueeze(0).expand(x.shape[0], -1)
-        betas = betas.mean(dim=0).unsqueeze(0).expand(x.shape[0], -1)
-        x = gammas * x + betas
-        fp_out = x, pos_skip, batch_skip
-
-        fp_outs = [fp_out]
-        for i in range(1, self.num_layer):
-            fp_out = self.fp_module_list[i](*fp_out, *sa_outs[-(i+2)])
-
+        if self.use_film:
             x, pos_skip, batch_skip = fp_out
-            film_out = self.film_layers[i+1](force_vector.to(torch.float32))
+            film_out = self.film_layers[1](force_vector.to(torch.float32))
             gammas, betas = torch.split(film_out, int(film_out.shape[1]/2), dim=1)
             gammas = gammas.mean(dim=0).unsqueeze(0).expand(x.shape[0], -1)
             betas = betas.mean(dim=0).unsqueeze(0).expand(x.shape[0], -1)
             x = gammas * x + betas
             fp_out = x, pos_skip, batch_skip
+
+        fp_outs = [fp_out]
+        for i in range(1, self.num_layer):
+            fp_out = self.fp_module_list[i](*fp_out, *sa_outs[-(i+2)])
+
+            if self.use_film:
+                x, pos_skip, batch_skip = fp_out
+                film_out = self.film_layers[i+1](force_vector.to(torch.float32))
+                gammas, betas = torch.split(film_out, int(film_out.shape[1]/2), dim=1)
+                gammas = gammas.mean(dim=0).unsqueeze(0).expand(x.shape[0], -1)
+                betas = betas.mean(dim=0).unsqueeze(0).expand(x.shape[0], -1)
+                x = gammas * x + betas
+                fp_out = x, pos_skip, batch_skip
 
             fp_outs.append(fp_out)
 

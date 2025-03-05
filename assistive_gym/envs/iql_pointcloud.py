@@ -606,7 +606,7 @@ class IQLAgent(object):
         ckpt  = torch.load(osp.join(ckpt_path), map_location=self.device)
         if isinstance(ckpt, dict) and 'model_state_dict' in ckpt:
             model.load_state_dict(
-                ckpt['model_state_dict']
+                ckpt['model_state_dict'], strict=False
             )
         else:
             model.load_state_dict(ckpt)

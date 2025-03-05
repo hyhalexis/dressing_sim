@@ -316,8 +316,8 @@ def main(args):
     )
     buffer.load2(args.parsed_dataset_dir)
 
+
     reward_model1 = RewardModelVLM(obs_shape, action_shape, args, use_action=args.reward_model_use_action)
-    print(args.pc_feature_dim)
     reward_model1.load(args.reward_model1_dir, args.reward_model1_step)
     reward_model1.eval()
     
@@ -355,7 +355,7 @@ def main(args):
     garment_ids = [1, 2]
     motion_ids = [0, 1, 2, 4, 5, 6, 7, 8]
     pairs = [(x, y) for x in garment_ids for y in motion_ids]
-    print('Num workers', len(pairs)//2)
+    print('Num workers', len(pairs))
         
     for step in tqdm(range(resume_step, args.num_train_steps)):
     # for i in range(3):
@@ -369,7 +369,7 @@ def main(args):
             
             # print("Eval is happening")
 
-            parallel_evaluator = ParallelEvaluator(num_workers=(len(pairs)//2))
+            parallel_evaluator = ParallelEvaluator(num_workers=(len(pairs)))
             dressed_ratios = parallel_evaluator.evaluate_agents(agent, step, pairs, args)
             parallel_evaluator.close()
 
@@ -401,7 +401,7 @@ def main(args):
 if __name__ == "__main__":
     mp.set_start_method('spawn', force=True)
         
-    exp_prefix =  '2025-0116-pybullet-from-scratch'
+    exp_prefix =  '2025-0223-pybullet-fine-tune'
     load_variant_path = '/home/ahao/assistive-gym-fem/assistive_gym/envs/variant_real_world_final_ori.json'
     
     loaded_vg = create_vg_from_json(load_variant_path)
@@ -413,7 +413,7 @@ if __name__ == "__main__":
 
     exp_count = 0
     timestamp = now.strftime('%m_%d_%H_%M_%S')
-    exp_name = "iql-training-film-force-simple"
+    exp_name = "iql-training-no_film-one-hot-with_one-hot_dataset-multi-layer-1e-4"
     print(exp_name)
     exp_name = "{}-{}-{:03}".format(exp_name, timestamp, exp_count)
     log_dir = '/project_data/held/ahao/data/' + exp_prefix + "/" + exp_name

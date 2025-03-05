@@ -180,6 +180,7 @@ class PcFlowEncoder(nn.Module):
         use_batch_norm=False,
         output_logits=False,
         residual=False,
+        use_film=False
     ):
         super().__init__()
         self.output_logits = output_logits
@@ -195,7 +196,8 @@ class PcFlowEncoder(nn.Module):
             linear_mlp_list,
             fp_k,
             use_batch_norm,
-            residual
+            residual,
+            use_film
         )
         self.feature_dim = output_dim
     
@@ -255,7 +257,8 @@ def make_encoder(
             args.fp_k,
             False, 
             output_logits,
-            residual
+            residual,
+            args.film_force
         )
 
 if __name__ == '__main__':
