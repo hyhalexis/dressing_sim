@@ -19,9 +19,9 @@ def compute_smoothness_metrics(actions):
     return metrics
 
 
-path = '/project_data/held/ahao/data/2025-0228-pybullet-eval-baselines/eval-baseline134+ours-03_01_01_25_01-000/trajs'
-pkl_files = sorted([f for f in os.listdir(path) if not f.endswith("0.0.pkl")])
-policy_metrics = {"p0": [], "p1": [], "p2": [], "p3": [], "p4": []}
+path = '/project_data/held/ahao/data/2025-0313-pybullet-eval-baselines/eval-all-baseline+ours-0.01_thresh_for_fcvp_high-fric-unseen1-03_13_08_24_53-000/trajs'
+pkl_files = sorted([f for f in os.listdir(path)])
+policy_metrics = {"p0": [], "p1": [], "p2": [], "p3": [], "p4": [], "p5": []}
 
 
 for i, filename in enumerate(pkl_files):

@@ -19,15 +19,17 @@ from scipy.spatial.transform import Rotation as R
 import copy
 
 class DressingEnv(AssistiveEnv):
-    def __init__(self, robot, human, use_ik=True, policy=2, horizon=150, camera_pos = 'side', occlusion = True, render=False, one_hot = False, reconstruct = False, gif_path=None, use_force=False, mass=0.16, friction=0.1, repulsion=0, elbow_rand=-90, shoulder_rand=80):
+    def __init__(self, robot, human, use_ik=True, gender='female', policy=2, horizon=150, camera_pos = 'side', occlusion = True, render=False, one_hot = False, reconstruct = False, gif_path=None, use_force=False, adv=False, mass=0.16, friction=0.1, repulsion=0, elbow_rand=-90, shoulder_rand=80):
     # def __init__(self, robot, human, use_ik=True, policy=2, horizon=150, motion=1, garment=1, camera_pos = 'side', render=False):
         super(DressingEnv, self).__init__(robot=robot, human=human, task='dressing', obs_robot_len=(16 + len(robot.controllable_joint_indices) - (len(robot.wheel_joint_indices) if robot.mobile else 0)), obs_human_len=(16 + (len(human.controllable_joint_indices) if human is not None else 0)), frame_skip=1, time_step=0.02, deformable=True, render=render)
         self.use_ik = use_ik
         self.use_mesh = (human is None)
+        self.gender = gender
         self.arm_traj_idx = 0
         self.arm_traj = None
         self.traj_direction = 1
         self.repeat_traj = 0
+        self.adv = adv
         # self.motion_id = int(motion)
         # self.garment_id = int(garment)
         self.verbose = False
@@ -746,7 +748,7 @@ class DressingEnv(AssistiveEnv):
         self.pose_id = int(pose_id)
         self.step_idx = step_idx
         self.images = []
-        self.build_assistive_env('wheelchair_left', gender='female', human_impairment='none')
+        self.build_assistive_env('wheelchair_left', gender=self.gender, human_impairment='none')
         if self.robot.wheelchair_mounted:
             wheelchair_pos, wheelchair_orient = self.furniture.get_base_pos_orient()
             self.robot.set_base_pos_orient(wheelchair_pos + np.array(self.robot.toc_base_pos_offset[self.task]), [0, 0, np.pi/2.0])
@@ -779,9 +781,17 @@ class DressingEnv(AssistiveEnv):
             joints_positions = [(self.human.j_right_elbow, self.elbow_rand), (self.human.j_right_shoulder_x, self.shoulder_rand), (self.human.j_left_elbow, -90), (self.human.j_right_hip_x, -90), (self.human.j_right_knee, 80), (self.human.j_left_hip_x, -90), (self.human.j_left_knee, 80)]
             # self.human.setup_joints(joints_positions, use_static_joints=True, reactive_force=1, reactive_gain=0.01)
 
-            if self.pose_id == -1:
+            if self.motion_id == 0 or self.adv:
                 self.human.set_joint_angles([j for j, _ in joints_positions], [np.deg2rad(j_angle) for _, j_angle in joints_positions])
-            
+                
+            elif self.pose_id == -1:
+                self.human.set_joint_angles([j for j, _ in joints_positions], [np.deg2rad(j_angle) for _, j_angle in joints_positions])
+                self.generate_arm_traj()
+                init_pose = self.arm_traj[0]
+                joints = [self.human.j_right_pecs_x, self.human.j_right_pecs_y, self.human.j_right_pecs_z, self.human.j_right_shoulder_x, self.human.j_right_shoulder_y, self.human.j_right_shoulder_z, self.human.j_right_elbow, self.human.j_right_forearm, self.human.j_right_wrist_x, self.human.j_right_wrist_y]
+                joint_angles = init_pose.tolist()
+                self.human.set_joint_angles([j for j in joints], [j_angle for j_angle in joint_angles])
+
             else:
                 self.human.set_joint_angles([j for j, _ in joints_positions], [np.deg2rad(j_angle) for _, j_angle in joints_positions])
                 self.generate_init_poses()
@@ -1036,7 +1046,7 @@ class DressingEnv(AssistiveEnv):
 
         p.setGravity(0, 0, -9.81, physicsClientId=self.id)   
 
-        self.generate_arm_traj()
+        # self.generate_arm_traj()
         self.time = time.time()
         self.init_env_variables()
 
@@ -1093,6 +1103,53 @@ class DressingEnv(AssistiveEnv):
                 target_joint_angles = pickle.load(f)
             steps = 60
             self.arm_traj = np.linspace(joint_angles, target_joint_angles, num=steps)
+            self.repeat_traj = 0
+
+        elif self.motion_id == 11:
+            with open('arm_motions/straight_up.pkl', 'rb') as f:
+                target_joint_angles = pickle.load(f)
+            steps = 60
+            self.arm_traj = np.linspace(target_joint_angles, joint_angles, num=steps)
+            self.repeat_traj = 0
+            
+        elif self.motion_id == 12:
+            with open('arm_motions/bend_down.pkl', 'rb') as f:
+                target_joint_angles = pickle.load(f)
+            steps = 60
+            self.arm_traj = np.linspace(target_joint_angles, joint_angles, num=steps)
+            self.repeat_traj = 0
+            
+        elif self.motion_id == 13:
+            pass
+        elif self.motion_id == 14:
+            with open('arm_motions/straight_down.pkl', 'rb') as f:
+                target_joint_angles = pickle.load(f)
+            steps = 60
+            self.arm_traj = np.linspace(target_joint_angles, joint_angles, num=steps)
+            self.repeat_traj = 0
+        elif self.motion_id == 15:
+            with open('arm_motions/reach_phone.pkl', 'rb') as f:
+                target_joint_angles = pickle.load(f)
+            steps = 60
+            self.arm_traj = np.linspace(target_joint_angles, joint_angles, num=steps)[10:]
+            self.repeat_traj = 1
+        elif self.motion_id == 16:
+            with open('arm_motions/receive_obj.pkl', 'rb') as f:
+                target_joint_angles = pickle.load(f)
+            steps = 60
+            self.arm_traj = np.linspace(target_joint_angles, joint_angles, num=steps)
+            self.repeat_traj = 1
+        elif self.motion_id == 17:
+            with open('arm_motions/scratch_head.pkl', 'rb') as f:
+                target_joint_angles = pickle.load(f)
+            steps = 60 #40 -> 30
+            self.arm_traj = np.linspace(target_joint_angles, joint_angles, num=steps)[20:]
+            self.repeat_traj = 1
+        elif self.motion_id == 18:
+            with open('arm_motions/maneki_arm.pkl', 'rb') as f:
+                target_joint_angles = pickle.load(f)
+            steps = 60
+            self.arm_traj = np.linspace(target_joint_angles, joint_angles, num=steps)[10:]
             self.repeat_traj = 0
 
         else:

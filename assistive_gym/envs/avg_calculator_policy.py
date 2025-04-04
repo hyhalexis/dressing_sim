@@ -3,13 +3,13 @@ import re
 from collections import defaultdict
 
 # Folder containing the files
-folder_path = "/project_data/held/ahao/data/2025-0228-pybullet-eval-baselines/eval-all-baseline+ours-03_03_07_01_38-000/gifs"
+folder_path = "/project_data/held/ahao/data/2025-0313-pybullet-eval-baselines/eval-all-baseline+ours-0.01_thresh_for_fcvp_mid-fric-unseen1-03_13_08_39_43-000/trajs"
 
 # Data structure to store the sums and counts
 data = defaultdict(lambda: {'sum': 0, 'count': 0})
 
 # Regular expression to parse the filenames
-pattern = re.compile(r"(p\d+)_motion(\d+).*_(\d+\.\d+)\.gif")
+pattern = re.compile(r"(p\d+)_motion(\d+).*_(\d+\.\d+)\.pkl")
 
 # Parse filenames in the folder
 for filename in os.listdir(folder_path):
@@ -37,13 +37,13 @@ import re
 from collections import defaultdict
 
 # Folder containing the files
-folder_path =  "/project_data/held/ahao/data/2025-0228-pybullet-eval-baselines/eval-all-baseline+ours-03_03_07_01_38-000/gifs"
+folder_path =  "/project_data/held/ahao/data/2025-0313-pybullet-eval-baselines/eval-all-baseline+ours-0.01_thresh_for_fcvp_high-fric-male-03_26_01_21_02-000/trajs"
 
 # Data structure to store the sums and counts for each participant
 participant_data = defaultdict(lambda: {'sum': 0, 'count': 0})
 
 # Regular expression to parse the filenames
-pattern = re.compile(r"(p\d+)_motion\d+.*_(\d+\.\d+)\.gif")
+pattern = re.compile(r"(p\d+)_motion\d+.*_(\d+\.\d+)\.pkl")
 
 # Parse filenames in the folder
 for filename in os.listdir(folder_path):

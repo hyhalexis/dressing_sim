@@ -478,6 +478,7 @@ class ForceVisionAgent(object):
             obs_ = copy.deepcopy(obs)
             obs_.batch = torch.from_numpy(np.zeros(obs.x.shape[0], dtype=np.int))
             obs_ = obs_.to(self.device)
+            force_vector = force_vector.to(self.device)
             mu, _, _, log_std = self.actor(
                 obs_, force_vector, compute_pi=False, compute_log_pi=False
             )
@@ -788,7 +789,7 @@ class ForceVisionAgent(object):
     
 
     def load_helper(self, model, ckpt_path):
-        ckpt  = torch.load(osp.join(ckpt_path))
+        ckpt  = torch.load(osp.join(ckpt_path), map_location=self.device)
         if isinstance(ckpt, dict) and 'model_state_dict' in ckpt:
             model.load_state_dict(
                 ckpt['model_state_dict']

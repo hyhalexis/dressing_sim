@@ -262,8 +262,6 @@ class IQLAgent(object):
             self.args.constant_reward = float(self.args.constant_reward)
             print("Using constant reward: ", self.args.constant_reward)
 
-  
-
     def train(self, training=True):
         self.training = training
         self.actor.train(training)

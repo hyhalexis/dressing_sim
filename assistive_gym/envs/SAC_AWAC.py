@@ -827,8 +827,8 @@ class SAC_AWACAgent(object):
         )
 
     def load(self, actor_path, critic_path, load_optimizer=False):
-        actor_checkpoint  = torch.load(actor_path)
-        critic_checkpoint = torch.load(critic_path)
+        actor_checkpoint  = torch.load(actor_path, map_location=self.device)
+        critic_checkpoint = torch.load(critic_path, map_location=self.device)
 
         self.load_helper(self.actor, actor_path)
         self.load_helper(self.critic, critic_path)
@@ -849,7 +849,7 @@ class SAC_AWACAgent(object):
         print("loaded critic model from {}".format(critic_path))
 
     def load_helper(self, model, ckpt_path):
-        ckpt  = torch.load(osp.join(ckpt_path))
+        ckpt  = torch.load(osp.join(ckpt_path), map_location=self.device)
         if isinstance(ckpt, dict) and 'model_state_dict' in ckpt:
             model.load_state_dict(
                 ckpt['model_state_dict']

@@ -28,7 +28,7 @@ from sklearn.metrics import accuracy_score
 from encoder import make_encoder
 import copy
 
-device = 'cuda:2'
+device = 'cuda:3'
 LOG_FREQ = 10000
 
 def gen_net(in_size=1, out_size=1, H=128, n_layers=3, activation='tanh'):
@@ -2123,7 +2123,7 @@ class RewardModelVLM:
         self.activation = activation
         self.size_segment = size_segment
         self.args = args
-        self.device = device
+        self.device = torch.device('cuda:{}'.format(args.cuda_idx) if torch.cuda.is_available() else 'cpu')
         print("Reward Model -- Device: ", self.device)
         self.gripper_idx = 2
         self.use_action = use_action
@@ -2227,7 +2227,7 @@ class RewardModelVLM:
         
     def construct_ensemble(self):
         for i in range(self.de):
-            model = PC2Reward(self.ds, self.da, use_action=self.use_action, hidden_dim=self.args.hidden_dim, encoder_type=self.args.encoder_type, encoder_feature_dim=self.encoder_feature_dim, num_layers=self.args.num_layers, num_filters=self.args.num_filters, args=self.args).float().to(device)
+            model = PC2Reward(self.ds, self.da, use_action=self.use_action, hidden_dim=self.args.hidden_dim, encoder_type=self.args.encoder_type, encoder_feature_dim=self.encoder_feature_dim, num_layers=self.args.num_layers, num_filters=self.args.num_filters, args=self.args).float().to(self.device)
             self.ensemble.append(model)
             self.paramlst.extend(model.parameters())
             
@@ -2459,8 +2459,7 @@ class RewardModelVLM:
         return ensemble_acc
 
                 
-    def process(self,obs_1, act_1, obs_2, act_2, device='cuda'):
-        self.device = device
+    def process(self,obs_1, act_1, obs_2, act_2):
         if self.debug:
             print("process - Size of inputs as obs_1:", len(obs_1))
             print("process - Size of inputs as obs_2:", len(obs_2))
@@ -2546,7 +2545,7 @@ class RewardModelVLM:
 
     def r_hat_member(self, obs, act, member=-1):
         # the network parameterizes r hat
-        return self.ensemble[member](obs.to(device), act.to(device))
+        return self.ensemble[member](obs.to(self.device), act.to(self.device))
 
     def r_hat(self, obs, act):
         r_hats = []
@@ -2574,7 +2573,7 @@ class RewardModelVLM:
         model_dir = os.path.join(file_dir, model_dir)
         for member in range(self.de):
             self.ensemble[member].load_state_dict(
-                torch.load('%s/reward_model_%s_%s.pt' % (model_dir, step, member), map_location=device)
+                torch.load('%s/reward_model_%s_%s.pt' % (model_dir, step, member), map_location=self.device)
             )
         print("Finished loading reward model ensemble")
     
@@ -2596,7 +2595,7 @@ class RewardModelVLM:
             obs_2 = self.buffer_seg2[epoch*batch_size:last_index]
             act_2 = self.buffer_act2[epoch*batch_size:last_index]
             labels = self.buffer_label[epoch*batch_size:last_index]
-            labels = torch.from_numpy(labels.flatten()).long().to(device)
+            labels = torch.from_numpy(labels.flatten()).long().to(self.device)
             total += labels.size(0)
             for member in range(self.de):
                 # get logits
@@ -2658,7 +2657,7 @@ class RewardModelVLM:
                     print(f"train_reward - Member {member} Epoch {epoch} act_2 length:", len(act_2))
                 obs_1, act_1, obs_2, act_2 = self.process(obs_1, act_1, obs_2, act_2)
                 labels = self.buffer_label[idxs]
-                labels = torch.from_numpy(labels.flatten()).long().to(device)
+                labels = torch.from_numpy(labels.flatten()).long().to(self.device)
                 
                 if self.debug:
                     print(f"train_reward - Member {member} Epoch {epoch} obs_1.x shape:", obs_1.x.shape)

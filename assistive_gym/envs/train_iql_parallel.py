@@ -32,6 +32,8 @@ import pybullet as p
 
 import multiprocessing as mp
 from multiprocessing import Pool
+from collections import deque
+
 
 # import cProfile, pstats, io
 
@@ -171,20 +173,30 @@ def evaluate(arg):
     agent, step, garment_id, motion_id, args = arg
 
     def run_eval_loop():
-        env = DressingSawyerHumanEnv(policy=args.policy, horizon=args.horizon, camera_pos=args.camera_pos, occlusion=args.occlusion, use_force=args.use_force, one_hot=args.one_hot, reconstruct = args.reconstruct, render=args.render, gif_path=args.gif_path)
+        env = DressingSawyerHumanEnv(policy=args.policy, horizon=args.horizon, camera_pos=args.camera_pos, occlusion=args.occlusion, use_force=args.use_force, one_hot=args.one_hot, reconstruct = args.reconstruct, friction=args.friction, render=args.render, gif_path=args.gif_path)
 
         obs, force_vector = env.reset(garment_id=garment_id, motion_id=motion_id, step_idx=step)
         done = False
         episode_reward = 0
         ep_info = []
         rewards = []
+
+        if args.use_force_hist:
+            force_history = deque([], maxlen=10)
+            for i in range(5):
+                force_history.append(force_vector)
         
         t = 0
         while not done:
             print('------Iteration', t)
+            if args.use_force_hist:
+                force_history_array = np.concatenate(list(force_history)[-3:]).reshape(1, -1)
+                force_input = torch.from_numpy(force_history_array).float()
+            else:
+                force_input = force_vector
 
             with utils.eval_mode(agent):
-                action = agent.select_action(obs, force_vector)
+                action = agent.select_action(obs, force_input)
                 # print('outside', force_vector.shape)
             step_action = action.reshape(-1, 6)[-1].flatten()
             # step_action[3] = 0
@@ -213,6 +225,8 @@ def evaluate(arg):
                 step_action[3:] *= dtheta
 
             obs, reward, done, info, force_vector = env.step(step_action)
+            if args.use_force_hist:
+                force_history.append(force_vector)
             episode_reward += reward
             ep_info.append(info)
             rewards.append(reward)
@@ -314,7 +328,7 @@ def main(args):
     buffer = PointCloudReplayBuffer(
         args, action_shape, rb_limit, args.batch_size, device, td=args.__dict__.get("td", False), n_step=args.__dict__.get("n_step", 1),reward_relabel=args.reward_relabel
     )
-    buffer.load2(args.parsed_dataset_dir)
+    buffer.load2(args.dataset_dir, args.parsed_dataset_dir)
 
 
     reward_model1 = RewardModelVLM(obs_shape, action_shape, args, use_action=args.reward_model_use_action)
@@ -353,7 +367,8 @@ def main(args):
         resume_step = 0
 
     garment_ids = [1, 2]
-    motion_ids = [0, 1, 2, 4, 5, 6, 7, 8]
+    # motion_ids = [0, 1, 2, 4, 5, 6, 7, 8]
+    motion_ids = [0]
     pairs = [(x, y) for x in garment_ids for y in motion_ids]
     print('Num workers', len(pairs))
         
@@ -362,7 +377,7 @@ def main(args):
         # evaluate agent periodically
         # if True:
         #     step = i
-        if step%args.eval_freq == 0 and step >= 0:
+        if step%args.eval_freq == 0 and step > 0:
             episode = int(step/args.eval_freq)
             print("Eval begin step = {}".format(step))
             L.log('eval-number', episode, step)
@@ -397,11 +412,10 @@ def main(args):
         # run training update
         agent.update(replay_buffers, L, step, pose_id=0)
 
-
 if __name__ == "__main__":
     mp.set_start_method('spawn', force=True)
         
-    exp_prefix =  '2025-0223-pybullet-fine-tune'
+    exp_prefix =  '2025-0327-pybullet-fine-tune-real'
     load_variant_path = '/home/ahao/assistive-gym-fem/assistive_gym/envs/variant_real_world_final_ori.json'
     
     loaded_vg = create_vg_from_json(load_variant_path)
@@ -413,7 +427,7 @@ if __name__ == "__main__":
 
     exp_count = 0
     timestamp = now.strftime('%m_%d_%H_%M_%S')
-    exp_name = "iql-training-no_film-one-hot-with_one-hot_dataset-multi-layer-1e-4"
+    exp_name = "iql-training_real-data_real-reward-model_1001_freeze_weights"
     print(exp_name)
     exp_name = "{}-{}-{:03}".format(exp_name, timestamp, exp_count)
     log_dir = '/project_data/held/ahao/data/' + exp_prefix + "/" + exp_name

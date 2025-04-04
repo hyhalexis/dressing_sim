@@ -262,6 +262,12 @@ class AssistiveEnv(gym.Env):
                 
                 ee_cur_R = R.from_quat([orient[0], orient[1], orient[2], orient[3]])
                 rotation_R = R.from_rotvec(actions[3:])
+                if np.linalg.norm(ee_cur_R.as_quat()) < 1e-6:
+                    ee_cur_R = R.identity()
+
+                if np.linalg.norm(rotation_R.as_quat()) < 1e-6:
+                    rotation_R = R.identity()
+
                 new_ee_R = rotation_R * ee_cur_R
                 new_ee_quat = new_ee_R.as_quat()
 

@@ -113,6 +113,8 @@ class PointCloudReplayBuffer():
         self.scale_transform = T.RandomScale((0.8, 1.2))
         self.reward1_w = args.r1_w
         self.reward2_w = args.r2_w
+        self.pref_reward_w = args.pref_reward_w
+        self.force_penalty_w = args.force_penalty_w
 
     def add(self, obs, action, reward, next_obs, done, non_randomized_obs=None, next_non_randomized_obs=None, label_intersection_idx=-1):
         # NOTE: now: obs is actually a data object from pytorch geometric
@@ -536,81 +538,136 @@ class PointCloudReplayBuffer():
         payload = [obses, next_obses, actions, rewards, not_dones, non_randomized_obses, forces, ori_obses, force_vectors, reward_obses, next_reward_obses]
         torch.save(payload, '/project_data/held/ahao/data/payload_one-hot_film-on-force')
 
-    def load2(self, data_dir):
-        # self.save_as_payload(data_dir)
-        payload = torch.load(data_dir)
+    def load2(self, data_dir, parsed_data_dir):
+        if not self.args.real_data:
+            # self.save_as_payload(data_dir)
+            payload = torch.load(data_dir)
 
-        # payload = torch.load('/project_data/held/ahao/data/payload_one-hot_film-on-force')
+            # payload = torch.load('/project_data/held/ahao/data/payload_one-hot_film-on-force')
 
-        # Convert lists to tensors
-        # temp = []
-        # for idx in range(len(payload[11])):
-        #     obs = copy.deepcopy(payload[11][idx])
-        #     obs.x = obs.x[:, :4]
-        #     temp.append(obs)
-        # self.obses = temp
+            # Convert lists to tensors
+            # temp = []
+            # for idx in range(len(payload[11])):
+            #     obs = copy.deepcopy(payload[11][idx])
+            #     obs.x = obs.x[:, :4]
+            #     temp.append(obs)
+            # self.obses = temp
 
-        # temp = []
-        # for idx in range(len(payload[12])):
-        #     next_obs = copy.deepcopy(payload[12][idx])
-        #     next_obs.x = next_obs.x[:, :4]
-        #     temp.append(next_obs)
-        # self.next_obses = temp
+            # temp = []
+            # for idx in range(len(payload[12])):
+            #     next_obs = copy.deepcopy(payload[12][idx])
+            #     next_obs.x = next_obs.x[:, :4]
+            #     temp.append(next_obs)
+            # self.next_obses = temp
 
-        self.obses = payload[0]
-        self.next_obses = payload[1]
-        self.reward_obses = payload[9]
-        self.next_reward_obses = payload[10]
+            self.obses = payload[0]
+            self.next_obses = payload[1]
+            self.reward_obses = payload[9]
+            self.next_reward_obses = payload[10]
 
-        # self.ori_actions = [action.reshape(-1, 6) for action in payload[2]]
-        temp = []
-        for idx in range(len(payload[2])):
-            obs_size = self.obses[idx].x.shape[0]
-            action = payload[2][idx].reshape(-1, 6)[-1]
-            actions = np.tile(action, (obs_size, 1))
-            temp.append(actions)
-        self.actions = temp
+            # self.ori_actions = [action.reshape(-1, 6) for action in payload[2]]
+            temp = []
+            for idx in range(len(payload[2])):
+                obs_size = self.obses[idx].x.shape[0]
+                action = payload[2][idx].reshape(-1, 6)[-1]
+                actions = np.tile(action, (obs_size, 1))
+                temp.append(actions)
+            self.actions = temp
 
-        temp = []
-        for idx in range(len(payload[2])):
-            reward_obs_size = self.reward_obses[idx].x.shape[0]
-            action = payload[2][idx].reshape(-1, 6)[-1]
-            actions = np.tile(action, (reward_obs_size, 1))
-            temp.append(actions)
-        self.reward_actions = temp
+            temp = []
+            for idx in range(len(payload[2])):
+                reward_obs_size = self.reward_obses[idx].x.shape[0]
+                action = payload[2][idx].reshape(-1, 6)[-1]
+                actions = np.tile(action, (reward_obs_size, 1))
+                temp.append(actions)
+            self.reward_actions = temp
 
-        # self.actions = [action.reshape(-1, 6) for action in payload[2]]
-        # self.actions = [action.reshape(-1, 6) for action in payload[2]]
-        self.rewards = payload[3]
-        self.not_dones = payload[4]
-        self.non_randomized_obses = payload[5]
-        self.forces = payload[6]
-        self.ori_obses = payload[7]
-        temp = []
-        self.force_vectors = payload[8]
-        # for force_vec in force_vectors:
-        #     temp.append(force_vec.flatten())
-        # self.force_vectors = temp
+            # self.actions = [action.reshape(-1, 6) for action in payload[2]]
+            # self.actions = [action.reshape(-1, 6) for action in payload[2]]
+            self.rewards = payload[3]
+            self.not_dones = payload[4]
+            self.non_randomized_obses = payload[5]
+            self.forces = payload[6]
+            self.ori_obses = payload[7]
+            temp = []
+            self.force_vectors = payload[8]
+            # for force_vec in force_vectors:
+            #     temp.append(force_vec.flatten())
+            # self.force_vectors = temp
 
-        # print('shape', self.force_vectors[0].shape)
-        c = 0
-        for f in self.force_vectors:
-            if not isinstance(f, torch.Tensor):
-                print(f)
-                c+=1
-        print(c)        
+            # temp = []
+            # actions_gripper = payload[2]
 
-        # temp = []
-        # actions_gripper = payload[2]
+            # for idx in range(len(actions_gripper)):
+            #     obs_size = self.obses[idx].x.shape[0]
+            #     actions = np.vstack([actions_gripper[idx]] * obs_size)
+            #     temp.append(actions)
+            
+            # self.actions = temp
+            self.idx = len(payload[3])
+            self.last_save = self.idx
+        else:
+            payload = torch.load(parsed_data_dir)
 
-        # for idx in range(len(actions_gripper)):
-        #     obs_size = self.obses[idx].x.shape[0]
-        #     actions = np.vstack([actions_gripper[idx]] * obs_size)
-        #     temp.append(actions)
-        
-        # self.actions = temp
-        self.idx = len(payload[3])
-        self.last_save = self.idx
+            self.obses = payload[0]
+            for obs in self.obses:
+                if obs.x.dtype is not torch.float32 or obs.pos.dtype is not torch.float32:
+                    print(obs.x.dtype, obs.pos.dtype)
+            self.next_obses = payload[1]
+            for obs in self.next_obses or obs.pos.dtype is not torch.float32:
+                if obs.x.dtype is not torch.float32:
+                    print(obs.x.dtype, obs.pos.dtype)
+            self.reward_obses = payload[7]
+            self.next_reward_obses = payload[8]
+
+            temp = []
+            for idx in range(len(payload[2])):
+                obs_size = self.obses[idx].x.shape[0]
+                action = payload[2][idx].reshape(-1, 6)[-1].astype(np.float32)
+                actions = np.tile(action, (obs_size, 1),)
+                # print(actions.dtype)
+
+                temp.append(actions)
+            self.actions = temp
+
+            temp = []
+            for idx in range(len(payload[2])):
+                reward_obs_size = self.reward_obses[idx].x.shape[0]
+                action = payload[2][idx].reshape(-1, 6)[-1].astype(np.float32)
+                actions = np.tile(action, (reward_obs_size, 1))
+                # print(actions.dtype)
+                temp.append(actions)
+            self.reward_actions = temp
+
+            self.not_dones = payload[3]
+            self.non_randomized_obses = payload[4]
+            if self.args.use_norm_force:
+                self.reward_force_vectors = payload[5]
+            else:
+                self.reward_force_vectors = payload[5] # very temp
+                # self.reward_force_vectors = payload[9]
+                self.args.force_penalty_thres = 10 #11
+
+            if self.args.use_force_hist:
+                if self.args.use_norm_force:
+                    self.force_vectors = payload[6]
+                else:
+                    # self.force_vectors = payload[10]
+                    self.force_vectors = payload[6]# very temp
+            else:
+                if self.args.use_norm_force:
+                    temp = []
+                    for idx in range(len(payload[6])):
+                        temp.append(payload[6][idx][:, -3:])
+                    self.force_vectors = temp    
+                else:
+                    temp = []
+                    for idx in range(len(payload[6])):
+                        temp.append(payload[10][idx][:, -3:])
+                    self.force_vectors = temp
+
+            self.idx = len(payload[3])
+            self.last_save = self.idx
 
 
     def load(self, save_dir, rb_idx, fix_load_data=False):
@@ -688,25 +745,24 @@ class PointCloudReplayBuffer():
     
     def relabel_rewards(self, reward_model1, reward_model2):
         for i in tqdm(range(self.idx)):
-            obs, action, reward, done, next_obs, reward_obs, reward_action = self.obses[i], self.actions[i], self.rewards[i], self.not_dones[i], self.next_obses[i], self.reward_obses[i], self.reward_actions[i]
-            # obs = ori_obs.to(self.device)
-            
-            # obs = obs.to(self.device)
+            reward_obs, reward_action, force_vector = self.reward_obses[i], self.reward_actions[i], self.reward_force_vectors[i]
 
             obs = reward_obs.to(self.device)
-
-            # obs_force = copy.deepcopy(ori_obs)
-            # obs_force = obs_force.to(self.device)
-            # obs_force.x = torch.cat((obs_force.x, torch.zeros(ori_obs.x.size(0), 1, device=device)), dim=1)
-            # obs_force.x[-1, 3] = force
-            # ori_obs = obs_force.to(self.device)
+            force_mag = np.linalg.norm(force_vector)
+            force_normalized = np.minimum(1, force_mag/self.args.force_penalty_thres)
+            force_penalty = -force_normalized**2
 
             obs, act = self.process([obs], [reward_action], device=self.device)
-            reward = reward
-            done = done
+
             with torch.no_grad():
                 if reward_model2 is None:  
-                    reward_pref = reward_model1.r_hat(obs, act)
+                    if self.args.use_force_penalty:
+                        reward_pref = self.pref_reward_w * reward_model1.r_hat(obs, act) + self.force_penalty_w * force_penalty
+                        reward_pref = np.clip(reward_pref, -1, 1)
+                    else:
+                        reward_pref = reward_model1.r_hat(obs, act)
                 else:
                     reward_pref = self.reward1_w * reward_model1.r_hat(obs, act) + self.reward2_w * reward_model2.r_hat(obs, act)
             self.rewards_pref[i] = reward_pref
+            if self.args.real_data:
+                self.rewards[i] = reward_pref

@@ -176,15 +176,20 @@ def evaluate(arg):
     # else:
     #     use_force = False
 
-    if step == 1:
+    if step == 2:
         args.use_force = True
     else:
         args.use_force = False
 
     def run_eval_loop():
         # Note
+        # if args.gender == 'female':
+        #     adv = True
+        # else: 
+        #     adv = False
+
         # env = DressingSawyerHumanEnv(policy=args.policy, horizon=args.horizon, camera_pos=args.camera_pos, occlusion=args.occlusion, rand=args.rand, render=args.render, gif_path=args.gif_path)
-        env = DressingSawyerHumanEnv(policy=int(step), horizon=args.horizon, camera_pos=args.camera_pos, occlusion=args.occlusion, render=args.render, gif_path=args.gif_path, one_hot=args.one_hot, reconstruct=args.reconstruct, use_force=args.use_force, mass=args.mass, friction=args.friction, repulsion=args.repulsion, elbow_rand=elbow_rand, shoulder_rand=shoulder_rand)
+        env = DressingSawyerHumanEnv(gender=args.gender, policy=int(step), horizon=args.horizon, camera_pos=args.camera_pos, occlusion=args.occlusion, render=args.render, gif_path=args.gif_path, one_hot=args.one_hot, reconstruct=args.reconstruct, use_force=args.use_force, mass=args.mass, friction=args.friction, repulsion=args.repulsion, elbow_rand=elbow_rand, shoulder_rand=shoulder_rand)
 
         obs, force_vector = env.reset(garment_id=garment_id, motion_id=motion_id, pose_id=pose_id, step_idx = step)
         done = False
@@ -385,6 +390,7 @@ def main(args):
     #     agents_ckpts.append(os.path.join(folder_path, agent))
 
     agents_ckpts = [
+                    "/home/ahao/assistive-gym-fem/assistive_gym/envs/ckpt_one-hot_film_force/actor_best_test_20000_0.99791.pt",
                     "/home/ahao/assistive-gym-fem/assistive_gym/envs/ckpt_one-hot/actor_best_test_750137_0.75036.pt",
                     "/home/ahao/assistive-gym-fem/assistive_gym/envs/ckpt_one-hot_force_scratch/actor_best_test_210000_0.949.pt",
                     "/home/ahao/assistive-gym-fem/assistive_gym/envs/ckpt_one-hot/actor_best_test_750137_0.75036.pt",
@@ -408,28 +414,44 @@ def main(args):
     agents = []
     import re
 
-    for idx in range(10):
+    # high fric
+    elbow_angles = [-96.15, -88.0, -82.08, -95.4, -95.34, -94.25, -80.19, -88.99, -80.45, -97.32]
+    shoulder_angles = [78.46, 77.26, 82.51, 79.53, 81.39, 76.49, 77.33, 83.39, 75.89, 80.59]
+
+    # low fric
+    # elbow_angles = [-90.59, -84.3, -91.87, -84.45, -81.81, -89.86, -91.08, -94.28, -90.84, -84.64]
+    # shoulder_angles = [80.93, 78.13, 81.09, 80.1, 84.12, 78.27, 82.83, 76.8, 82.29, 76.56]
+
+    # mid fric
+    # elbow_angles = [-93.61, -91.26, -88.36, -86.75, -81.12, -97.16, -83.87, -94.32, -83.86, -95.64]
+    # shoulder_angles = [84.46, 83.34, 77.79, 82.2, 81.13, 76.96, 79.05, 82.47, 84.74, 78.47]
+
+    for idx in range(9):
         # if idx == 0:
         #     elbow_rand = -90
         #     shoulder_rand = 80
         # else:
-        rng = np.random.default_rng()
-        elbow_rand = np.round(-90 + rng.uniform(-10, 10), 2)
-        shoulder_rand = np.round(80 + rng.uniform(-5, 5), 2)
+        # rng = np.random.default_rng()
+        # elbow_rand = np.round(-90 + rng.uniform(-10, 10), 2)
+        # shoulder_rand = np.round(80 + rng.uniform(-5, 5), 2)
 
-        i = 0
-        for ckpt in agents_ckpts:
-            if i == 4:
+        elbow_rand = elbow_angles[idx+1]
+        shoulder_rand = shoulder_angles[idx+1]
+
+        for i in range(len(agents_ckpts)):
+            ckpt = agents_ckpts[i]
+
+            if i == 5 or i == 0:
                 args.film_force = True
             else:
                 args.film_force = False
 
-            if i == 1:
+            if i == 2:
                 args.pc_feature_dim = 4
             else:
                 args.pc_feature_dim = 3
 
-            if i == 0:
+            if i <= 1:
                 agent = make_agent_force(
                 obs_shape=obs_shape,
                 action_shape=action_shape,
@@ -456,9 +478,13 @@ def main(args):
         print('Num agents', len(agents))
 
 
+    # garment_ids = [1, 2]
     garment_ids = [1, 2]
+
     # Note
-    motion_ids = [0, 1, 2, 4, 5, 6, 7, 8]
+    # motion_ids = [11, 12, 14, 15, 16, 17, 18]
+    motion_ids = [1, 2, 4, 5, 6, 7, 8, 11, 12, 14, 15, 16, 17, 18]
+
     # motion_ids = [1, 8]
 
     # pose_ids = [i for i in range(28)]
@@ -476,7 +502,7 @@ def main(args):
         L.log('eval-number', episode, step)
 
         # Note
-        parallel_evaluator = ParallelEvaluator(num_workers=int(len(pairs)/2))
+        parallel_evaluator = ParallelEvaluator(num_workers=int(len(pairs)/4))
         dressed_ratios = parallel_evaluator.evaluate_agents(agent, step, elbow_rand, shoulder_rand, pairs, args)
         parallel_evaluator.close()
 
@@ -489,7 +515,7 @@ def main(args):
 if __name__ == "__main__":
     mp.set_start_method('spawn', force=True)
         
-    exp_prefix =  '2025-0304-pybullet-eval-baselines'
+    exp_prefix =  '2025-0313-pybullet-eval-baselines'
     load_variant_path = '/home/ahao/assistive-gym-fem/assistive_gym/envs/variant_eval.json'
     loaded_vg = create_vg_from_json(load_variant_path)
     print("Loaded configs from ", load_variant_path)
@@ -500,8 +526,7 @@ if __name__ == "__main__":
 
     exp_count = 0
     timestamp = now.strftime('%m_%d_%H_%M_%S')
-    exp_name = "eval-all-baseline+ours-0.01_thresh_for_fcvp"
-    # exp_name = "iql-training-p1-reward_model1-only_eval-t6"
+    exp_name = "eval-all-baseline+ours-0.01_thresh_for_fcvp_high-fric-male-bigger"
 
     print(exp_name)
     exp_name = "{}-{}-{:03}".format(exp_name, timestamp, exp_count)

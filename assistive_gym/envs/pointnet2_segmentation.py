@@ -41,7 +41,10 @@ class Net(torch.nn.Module):
             fp_k=[1, 3, 3],
             use_batch_norm=False,
             residual_learning=False, # if we are learning just a residual upon a nominal thing
-            use_film = False
+            use_film = False,
+            use_force_hist = False,
+            freeze_weights = False,
+            freeze_encoder_only = False
         ):
         super(Net, self).__init__()
 
@@ -81,13 +84,31 @@ class Net(torch.nn.Module):
 
         self.sa_latent_dim = sa_mlp_list[-1][-1]
         self.use_film = use_film
+        self.use_force_hist = use_force_hist
 
         if self.use_film:
             print('FILMMMMMM!!!!!')
+            if self.use_force_hist:
+                input_dim = 9
+            else:
+                input_dim = 3
+                
             self.film_layers = nn.ModuleList()
-            self.film_layers.append(nn.Linear(3, 2*sa_mlp_list[self.num_layer-1][-1]))
+            self.film_layers.append(nn.Linear(input_dim, 2*sa_mlp_list[self.num_layer-1][-1]))
             for l_idx in range(self.num_layer):
-                self.film_layers.append(nn.Linear(3, 2*fp_mlp_list[l_idx][-1]))
+                self.film_layers.append(nn.Linear(input_dim, 2*fp_mlp_list[l_idx][-1]))
+
+        if freeze_encoder_only:
+            for name, param in self.named_parameters():
+                if 'sa_module_list' in name:  # Freeze encoder layers
+                        param.requires_grad = True
+                        print(name)
+        
+        if freeze_weights:
+            for name, param in self.named_parameters():
+                if 'film_layers' not in name:  # Freeze encoder layers
+                        param.requires_grad = False
+                        print(name)
 
         # self.film_net = nn.Linear(3, 2*sa_mlp_list[self.num_layer-1][-1])
 
