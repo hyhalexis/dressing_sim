@@ -415,7 +415,7 @@ def main(args):
 if __name__ == "__main__":
     mp.set_start_method('spawn', force=True)
         
-    exp_prefix =  '2025-0327-pybullet-fine-tune-real'
+    exp_prefix =  '2025-0408-pybullet-fine-tune-real'
     load_variant_path = '/home/ahao/assistive-gym-fem/assistive_gym/envs/variant_real_world_final_ori.json'
     
     loaded_vg = create_vg_from_json(load_variant_path)

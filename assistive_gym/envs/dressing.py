@@ -19,12 +19,13 @@ from scipy.spatial.transform import Rotation as R
 import copy
 
 class DressingEnv(AssistiveEnv):
-    def __init__(self, robot, human, use_ik=True, gender='female', policy=2, horizon=150, camera_pos = 'side', occlusion = True, render=False, one_hot = False, reconstruct = False, gif_path=None, use_force=False, adv=False, mass=0.16, friction=0.1, repulsion=0, elbow_rand=-90, shoulder_rand=80):
+    def __init__(self, robot, human, use_ik=True, gender='female', body_size='modified', policy=2, horizon=150, camera_pos = 'side', occlusion = True, render=False, one_hot = False, reconstruct = False, gif_path=None, use_force=False, adv=False, mass=0.16, friction=0.1, repulsion=0, elbow_rand=-90, shoulder_rand=80):
     # def __init__(self, robot, human, use_ik=True, policy=2, horizon=150, motion=1, garment=1, camera_pos = 'side', render=False):
         super(DressingEnv, self).__init__(robot=robot, human=human, task='dressing', obs_robot_len=(16 + len(robot.controllable_joint_indices) - (len(robot.wheel_joint_indices) if robot.mobile else 0)), obs_human_len=(16 + (len(human.controllable_joint_indices) if human is not None else 0)), frame_skip=1, time_step=0.02, deformable=True, render=render)
         self.use_ik = use_ik
         self.use_mesh = (human is None)
         self.gender = gender
+        self.body_size = body_size
         self.arm_traj_idx = 0
         self.arm_traj = None
         self.traj_direction = 1
@@ -310,14 +311,14 @@ class DressingEnv(AssistiveEnv):
         obs, force_vector = self._get_obs()
         reward = self.compute_reward()
         info = self._get_info()
-        done = self.iteration >= self.horizon or info['upperarm_ratio'] > 0.99
+        done = self.iteration >= self.horizon or info['upperarm_ratio'] >= 0.99
 
         if done:
             # plt.figure(1)
             # plt.plot(self.error_lst[0])
             # plt.title('IK Error close_multi')
             # plt.savefig('sim_imgs/ik_close_multi.png')
-
+            print("Done!")
             # # Create the second figure
             # plt.figure(2)
             # plt.plot(self.error_lst[1])
@@ -329,8 +330,8 @@ class DressingEnv(AssistiveEnv):
    
             # imageio.mimsave('sim_gifs/up_p{}_motion{}_{}_{}_step{}_{}_{}.gif'.format(self.policy, self.motion_id, self.camera_pos, self.garment, self.step_idx, (self.upperarm_distance + self.forearm_distance) / (self.upper_arm_length + self.forearm_length), self.upperarm_distance / self.upper_arm_length), self.img_with_force, format='GIF', duration=30)
             # imageio.mimsave('{}/pose{}_{}_{}_step{}_{}_{}.gif'.format(self.gif_path, self.pose_id, self.camera_pos, self.garment, self.step_idx, (self.upperarm_distance + self.forearm_distance) / (self.upper_arm_length + self.forearm_length), self.upperarm_distance / self.upper_arm_length), self.images, format='GIF', duration=30)
-
-            imageio.mimsave('{}/p{}_motion{}_{}_{}_step{}_e{}_s{}_force{}_{}_{}.gif'.format(self.gif_path, self.policy, self.motion_id, self.camera_pos, self.garment, self.step_idx, self.elbow_rand, self.shoulder_rand, self.use_force, (self.upperarm_distance + self.forearm_distance) / (self.upper_arm_length + self.forearm_length), self.upperarm_distance / self.upper_arm_length), self.img_with_force, format='GIF', duration=30)
+            # print('Done! Saving...')
+            # imageio.mimsave('{}/p{}_motion{}_{}_{}_step{}_e{}_s{}_force{}_{}_{}.gif'.format(self.gif_path, self.policy, self.motion_id, self.camera_pos, self.garment, self.step_idx, self.elbow_rand, self.shoulder_rand, self.use_force, (self.upperarm_distance + self.forearm_distance) / (self.upper_arm_length + self.forearm_length), self.upperarm_distance / self.upper_arm_length), self.img_with_force, format='GIF', duration=30)
             # imageio.mimsave('{}/p{}_motion{}_{}_{}_e{}_s{}_{}_{}.gif'.format(self.gif_path, self.policy, self.motion_id, self.camera_pos, self.garment, self.elbow_rand, self.shoulder_rand, (self.upperarm_distance + self.forearm_distance) / (self.upper_arm_length + self.forearm_length), self.upperarm_distance / self.upper_arm_length), self.images, format='GIF', duration=30)
             # imageio.mimsave('sim_gifs/test_reduced_pts_motion{}_pose{}.gif'.format(self.motion_id, self.pose_id), self.images, format='GIF', duration=30)
         # print('------Iteration', self.iteration)
@@ -748,7 +749,7 @@ class DressingEnv(AssistiveEnv):
         self.pose_id = int(pose_id)
         self.step_idx = step_idx
         self.images = []
-        self.build_assistive_env('wheelchair_left', gender=self.gender, human_impairment='none')
+        self.build_assistive_env('wheelchair_left', gender=self.gender, human_impairment='none', body_size=self.body_size)
         if self.robot.wheelchair_mounted:
             wheelchair_pos, wheelchair_orient = self.furniture.get_base_pos_orient()
             self.robot.set_base_pos_orient(wheelchair_pos + np.array(self.robot.toc_base_pos_offset[self.task]), [0, 0, np.pi/2.0])
@@ -783,6 +784,7 @@ class DressingEnv(AssistiveEnv):
 
             if self.motion_id == 0 or self.adv:
                 self.human.set_joint_angles([j for j, _ in joints_positions], [np.deg2rad(j_angle) for _, j_angle in joints_positions])
+                self.generate_arm_traj()
                 
             elif self.pose_id == -1:
                 self.human.set_joint_angles([j for j, _ in joints_positions], [np.deg2rad(j_angle) for _, j_angle in joints_positions])
@@ -852,7 +854,13 @@ class DressingEnv(AssistiveEnv):
         # hand_pos[1] -= 0.57
         # hand_pos[2] += 0.11
 
-        hand_pos[1] -= 0.49
+        if self.garment_id == 0:
+            hand_pos[1] -= 0.09
+        elif self.garment_id == 1 or self.garment_id == 2:
+            hand_pos[1] -= 0.49
+        elif self.garment_id == 3 or self.garment_id == 4:
+            hand_pos[1] -= 0.69
+
         hand_pos[2] += 0.11
 
         # self.create_sphere(radius=0.05, mass=0.0, pos=self.line_points[0], visual=True, collision=False, rgba=[1, 0, 0, 0.5], maximal_coordinates=False, return_collision_visual=False)
@@ -1036,11 +1044,25 @@ class DressingEnv(AssistiveEnv):
         print('Settled')
 
         robo_pos, robo_ori = self.robot.get_pos_orient(self.robot.left_end_effector)
-        robo_pos[1] += 0.5
+
+        if self.garment_id == 0:
+            robo_pos[1] += 0.1
+        elif self.garment_id == 1 or self.garment_id == 2:
+            robo_pos[1] += 0.5
+        elif self.garment_id == 3 or self.garment_id == 4:
+            robo_pos[1] += 0.72
 
         joint_angles = self.robot.ik(self.robot.left_end_effector, robo_pos, robo_ori, self.robot.right_arm_ik_indices, max_iterations=1000, use_current_as_rest=False)
         self.robot.control(self.robot.controllable_joint_indices, joint_angles, self.robot.motor_gains, self.robot.motor_forces)
-        for i in range(60):
+        
+        if self.garment_id == 0:
+            settle_steps = 60
+        elif self.garment_id == 1 or self.garment_id == 2:
+            settle_steps = 60
+        elif self.garment_id == 3 or self.garment_id == 4:
+            settle_steps = 75
+
+        for i in range(settle_steps):
             print(i)
             p.stepSimulation(physicsClientId=self.id)
 

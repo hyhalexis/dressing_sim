@@ -265,8 +265,7 @@ dependencies:
       - termcolor==2.3.0
       - threadpoolctl==3.1.0
       - tifffile==2021.11.2
-      - torch==1.13.1
-      - torch-cluster==1.6.1+pt113cu116
+      # - torch-cluster==1.6.1+pt113cu116
       - tqdm==4.66.5
       - traitlets==5.9.0
       - trimesh==4.4.1
@@ -279,4 +278,4 @@ dependencies:
       - wrapt==1.16.0
       - yarl==1.9.4
       - zipp==3.15.0
-prefix: /home/alexishao/anaconda3/envs/assistive_gym
+prefix: /home/alexis/miniconda3/envs/assistive_gym

@@ -83,7 +83,7 @@ class Human(Agent):
         self.motor_forces = 1.0
         self.motor_gains = 0.5
 
-    def init(self, human_creation, limits_model, static_human_base, impairment, gender, config, id, np_random, mass=None, body_shape=None):
+    def init(self, human_creation, limits_model, static_human_base, impairment, gender, config, id, np_random, mass=None, body_size="modified", body_shape=None):
         self.limits_model = limits_model
         self.arm_previous_valid_pose = {True: None, False: None}
         # Choose gender
@@ -109,7 +109,7 @@ class Human(Agent):
             # self.body_shape = np_random.uniform(-1, 5, (1, self.num_body_shape))
             self.body_shape = np_random.uniform(0, 4, (1, self.num_body_shape))
         # Initialize human
-        self.body, self.head_scale, self.out_mesh, self.vertices, self.joints = human_creation.create_human(static=static_human_base, limit_scale=self.limit_scale, specular_color=[0.1, 0.1, 0.1], gender=gender, body_shape=self.body_shape)
+        self.body, self.head_scale, self.out_mesh, self.vertices, self.joints = human_creation.create_human(static=static_human_base, limit_scale=self.limit_scale, specular_color=[0.1, 0.1, 0.1], gender=gender, body_size=body_size, body_shape=self.body_shape)
         self.hand_radius = human_creation.hand_radius
         self.elbow_radius = human_creation.elbow_radius
         self.shoulder_radius = human_creation.shoulder_radius

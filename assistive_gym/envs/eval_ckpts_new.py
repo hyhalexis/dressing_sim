@@ -182,14 +182,8 @@ def evaluate(arg):
         args.use_force = False
 
     def run_eval_loop():
-        # Note
-        # if args.gender == 'female':
-        #     adv = True
-        # else: 
-        #     adv = False
-
         # env = DressingSawyerHumanEnv(policy=args.policy, horizon=args.horizon, camera_pos=args.camera_pos, occlusion=args.occlusion, rand=args.rand, render=args.render, gif_path=args.gif_path)
-        env = DressingSawyerHumanEnv(gender=args.gender, policy=int(step), horizon=args.horizon, camera_pos=args.camera_pos, occlusion=args.occlusion, render=args.render, gif_path=args.gif_path, one_hot=args.one_hot, reconstruct=args.reconstruct, use_force=args.use_force, mass=args.mass, friction=args.friction, repulsion=args.repulsion, elbow_rand=elbow_rand, shoulder_rand=shoulder_rand)
+        env = DressingSawyerHumanEnv(gender=args.gender, body_size=args.body_size, policy=int(step), horizon=args.horizon, camera_pos=args.camera_pos, occlusion=args.occlusion, render=args.render, gif_path=args.gif_path, one_hot=args.one_hot, reconstruct=args.reconstruct, use_force=args.use_force, adv=args.adv, mass=args.mass, friction=args.friction, repulsion=args.repulsion, elbow_rand=elbow_rand, shoulder_rand=shoulder_rand)
 
         obs, force_vector = env.reset(garment_id=garment_id, motion_id=motion_id, pose_id=pose_id, step_idx = step)
         done = False
@@ -198,7 +192,7 @@ def evaluate(arg):
         rewards = []
         traj_dataset = []
 
-        if step == 0:
+        if step == 0 or step == 1:
             force_history = deque([], maxlen=5)
             for i in range(5):
                 force_history.append(0)
@@ -206,10 +200,10 @@ def evaluate(arg):
         
         t = 0
         while not done:
-            print('------Iteration', t)
+            print('------Iteration', env.iteration)
 
             with utils.eval_mode(agent):
-                if step == 0:
+                if step == 0 or step == 1:
                     if env.on_forearm or env.on_upperarm:
                         action, progression_direction, predicted_force = agent.plan_action_constrain_force(obs, force_vector, np.array(force_history))
                     else:
@@ -243,7 +237,7 @@ def evaluate(arg):
                 step_action[3:] *= dtheta
 
             obs, reward, done, info, force_vector = env.step(step_action)
-            if step == 0:
+            if step == 0 or step == 1:
                 force_history.append(force_vector.sum())
 
             step_data = {
@@ -390,14 +384,16 @@ def main(args):
     #     agents_ckpts.append(os.path.join(folder_path, agent))
 
     agents_ckpts = [
-                    "/home/ahao/assistive-gym-fem/assistive_gym/envs/ckpt_one-hot_film_force/actor_best_test_20000_0.99791.pt",
-                    "/home/ahao/assistive-gym-fem/assistive_gym/envs/ckpt_one-hot/actor_best_test_750137_0.75036.pt",
-                    "/home/ahao/assistive-gym-fem/assistive_gym/envs/ckpt_one-hot_force_scratch/actor_best_test_210000_0.949.pt",
-                    "/home/ahao/assistive-gym-fem/assistive_gym/envs/ckpt_one-hot/actor_best_test_750137_0.75036.pt",
-                    "/home/ahao/assistive-gym-fem/assistive_gym/envs/ckpt_one-hot_film_no-force/actor_40000.pt",
-                    "/home/ahao/assistive-gym-fem/assistive_gym/envs/ckpt_one-hot_film_force/actor_best_test_20000_0.99791.pt",
+                    "/home/alexis/dressing_sim/assistive_gym/envs/ckpt_one-hot_film_force/actor_best_test_20000_0.99791.pt",
+                    "/home/alexis/dressing_sim/assistive_gym/envs/ckpt_one-hot/actor_best_test_750137_0.75036.pt",
+                    "/home/alexis/dressing_sim/assistive_gym/envs/ckpt_one-hot_force_scratch/actor_best_test_210000_0.949.pt",
+                    "/home/alexis/dressing_sim/assistive_gym/envs/ckpt_one-hot/actor_best_test_750137_0.75036.pt",
+                    "/home/alexis/dressing_sim/assistive_gym/envs/ckpt_one-hot_film_no-force/actor_40000.pt",
+                    "/home/alexis/dressing_sim/assistive_gym/envs/ckpt_one-hot_film_force/actor_best_test_20000_0.99791.pt",
+                    "/home/alexis/dressing_sim/assistive_gym/envs/ckpt_one-hot_force_freeze-vision/actor_best_test_20000_0.99431.pt",
+                    "/home/alexis/dressing_sim/assistive_gym/envs/ckpt_one-hot_film_force_scratch/actor_best_test_170000_0.93025.pt"
                     
-                    # "/home/ahao/assistive-gym-fem/assistive_gym/envs/ckpt_one-hot_film_force/actor_best_test_20000_0.99791.pt"
+                    # "/home/alexis/dressing_sim/assistive_gym/envs/ckpt_one-hot_film_force/actor_best_test_20000_0.99791.pt"
                     # "/scratch/alexis/data/2025-0104-pybullet-from-scratch/iql-training-from-scratch-force-reconstr-01_05_09_01_48-000/model/actor_best_test_400000_0.88345.pt",
                     # "/scratch/alexis/data/2025-0110-pybullet-from-scratch/iql-training-from-scratch-force-reconstr-reduced-data-01_11_06_42_34-000/model/actor_best_test_280000_0.82393.pt"
                     # "/scratch/alexis/data/2024-1220-pybullet-from-scratch/iql-training-from-scratch-with-force-p1-only-12_20_16_20_55-000/model/actor_best_test_80000_0.91073.pt",
@@ -426,7 +422,7 @@ def main(args):
     # elbow_angles = [-93.61, -91.26, -88.36, -86.75, -81.12, -97.16, -83.87, -94.32, -83.86, -95.64]
     # shoulder_angles = [84.46, 83.34, 77.79, 82.2, 81.13, 76.96, 79.05, 82.47, 84.74, 78.47]
 
-    for idx in range(9):
+    for idx in range(10):
         # if idx == 0:
         #     elbow_rand = -90
         #     shoulder_rand = 80
@@ -435,13 +431,15 @@ def main(args):
         # elbow_rand = np.round(-90 + rng.uniform(-10, 10), 2)
         # shoulder_rand = np.round(80 + rng.uniform(-5, 5), 2)
 
-        elbow_rand = elbow_angles[idx+1]
-        shoulder_rand = shoulder_angles[idx+1]
+        elbow_rand = elbow_angles[idx]
+        shoulder_rand = shoulder_angles[idx]
 
         for i in range(len(agents_ckpts)):
+            if i != 7:
+                continue
             ckpt = agents_ckpts[i]
 
-            if i == 5 or i == 0:
+            if i >= 5 or i == 0:
                 args.film_force = True
             else:
                 args.film_force = False
@@ -458,7 +456,7 @@ def main(args):
                 args=args,
                 device=device,
                 actor_load_name=ckpt,
-                force_critic_load_name='/home/ahao/assistive-gym-fem/assistive_gym/envs/ckpt_force_critic/force_critic_2000.pt'
+                force_critic_load_name='/home/alexis/dressing_sim/assistive_gym/envs/ckpt_force_model/force_critic_2000.pt'
                 )
             else:
                 agent = make_agent(
@@ -478,14 +476,16 @@ def main(args):
         print('Num agents', len(agents))
 
 
-    # garment_ids = [1, 2]
-    garment_ids = [1, 2]
+    # garment_ids = [3]
+    garment_ids = [3]
 
     # Note
     # motion_ids = [11, 12, 14, 15, 16, 17, 18]
+    # motion_ids = [1, 2, 4, 5, 6, 7, 8]
     motion_ids = [1, 2, 4, 5, 6, 7, 8, 11, 12, 14, 15, 16, 17, 18]
+    
 
-    # motion_ids = [1, 8]
+    # motion_ids = [0]
 
     # pose_ids = [i for i in range(28)]
 
@@ -502,7 +502,7 @@ def main(args):
         L.log('eval-number', episode, step)
 
         # Note
-        parallel_evaluator = ParallelEvaluator(num_workers=int(len(pairs)/4))
+        parallel_evaluator = ParallelEvaluator(num_workers=int(len(pairs)))
         dressed_ratios = parallel_evaluator.evaluate_agents(agent, step, elbow_rand, shoulder_rand, pairs, args)
         parallel_evaluator.close()
 
@@ -515,8 +515,8 @@ def main(args):
 if __name__ == "__main__":
     mp.set_start_method('spawn', force=True)
         
-    exp_prefix =  '2025-0313-pybullet-eval-baselines'
-    load_variant_path = '/home/ahao/assistive-gym-fem/assistive_gym/envs/variant_eval.json'
+    exp_prefix =  '2025-0427-pybullet-eval-baselines'
+    load_variant_path = '/home/alexis/dressing_sim/assistive_gym/envs/variants/variant_eval.json'
     loaded_vg = create_vg_from_json(load_variant_path)
     print("Loaded configs from ", load_variant_path)
     vg = loaded_vg
@@ -526,11 +526,12 @@ if __name__ == "__main__":
 
     exp_count = 0
     timestamp = now.strftime('%m_%d_%H_%M_%S')
-    exp_name = "eval-all-baseline+ours-0.01_thresh_for_fcvp_high-fric-male-bigger"
+    exp_name = "eval-scratch-film-0.01_thresh_for_fcvp_high-fric-female-smaller3"
+    # exp_name = 'test-garments'
 
     print(exp_name)
     exp_name = "{}-{}-{:03}".format(exp_name, timestamp, exp_count)
-    log_dir = '/project_data/held/ahao/data/' + exp_prefix + "/" + exp_name
+    log_dir = '/scratch/alexis/data/' + exp_prefix + "/" + exp_name
 
     run_task(vg, log_dir=log_dir, exp_name=exp_name)
     #eval()

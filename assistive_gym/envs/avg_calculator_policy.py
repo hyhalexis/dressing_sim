@@ -3,7 +3,7 @@ import re
 from collections import defaultdict
 
 # Folder containing the files
-folder_path = "/project_data/held/ahao/data/2025-0313-pybullet-eval-baselines/eval-all-baseline+ours-0.01_thresh_for_fcvp_mid-fric-unseen1-03_13_08_39_43-000/trajs"
+folder_path = "/scratch/alexis/data/2025-0427-pybullet-eval-baselines/eval-scratch-film-0.01_thresh_for_fcvp_high-fric-female-smaller3-04_27_23_11_06-000/trajs"
 
 # Data structure to store the sums and counts
 data = defaultdict(lambda: {'sum': 0, 'count': 0})
@@ -37,7 +37,7 @@ import re
 from collections import defaultdict
 
 # Folder containing the files
-folder_path =  "/project_data/held/ahao/data/2025-0313-pybullet-eval-baselines/eval-all-baseline+ours-0.01_thresh_for_fcvp_high-fric-male-03_26_01_21_02-000/trajs"
+folder_path =  "/scratch/alexis/data/2025-0427-pybullet-eval-baselines/eval-scratch-film-0.01_thresh_for_fcvp_high-fric-female-smaller3-04_27_23_11_06-000/trajs"
 
 # Data structure to store the sums and counts for each participant
 participant_data = defaultdict(lambda: {'sum': 0, 'count': 0})

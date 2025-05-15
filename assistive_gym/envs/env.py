@@ -16,6 +16,7 @@ from agents.robot import Robot
 from agents.tool import Tool
 from agents.furniture import Furniture
 from scipy.spatial.transform import Rotation as R
+import scipy
 
 class AssistiveEnv(gym.Env):
     def __init__(self, robot=None, human=None, task='', obs_robot_len=0, obs_human_len=0, time_step=0.02, frame_skip=5, render=False, gravity=-9.81, seed=1001, deformable=False):
@@ -115,7 +116,7 @@ class AssistiveEnv(gym.Env):
         self.forces = []
         self.task_success = 0
 
-    def build_assistive_env(self, furniture_type=None, fixed_human_base=True, human_impairment='random', gender='random', mass=None, body_shape=None):
+    def build_assistive_env(self, furniture_type=None, fixed_human_base=True, human_impairment='random', gender='random', mass=None, body_size='modified', body_shape=None):
         # Build plane, furniture, robot, human, etc. (just like world creation)
         # Load the ground plane
         plane = p.loadURDF(os.path.join(self.directory, 'plane', 'plane.urdf'), physicsClientId=self.id)
@@ -130,7 +131,7 @@ class AssistiveEnv(gym.Env):
             self.agents.append(self.robot)
         # Create human
         if self.human is not None and isinstance(self.human, Human):
-            self.human.init(self.human_creation, self.human_limits_model, fixed_human_base, human_impairment, gender, self.config, self.id, self.np_random, mass=mass, body_shape=body_shape)
+            self.human.init(self.human_creation, self.human_limits_model, fixed_human_base, human_impairment, gender, self.config, self.id, self.np_random, mass=mass, body_size=body_size, body_shape=body_shape)
             if self.human.controllable or self.human.impairment == 'tremor':
                 self.agents.append(self.human)
         # Create furniture (wheelchair, bed, or table)
@@ -210,16 +211,20 @@ class AssistiveEnv(gym.Env):
                     start = 15 if self.policy == 2 else 30
                 elif self.garment_id == 2:
                     start = 20 if self.policy == 2 else 30
+                elif self.garment_id == 3:
+                    start = 40
+                elif self.garment_id == 4:
+                    start = 40
+                elif self.garment_id == 0:
+                    start = 20
 
                 if self.iteration >= start:
                     # print('here1')
                     if self.arm_traj_idx == len(self.arm_traj) or self.arm_traj_idx < 0:
-                        print(self.arm_traj_idx, len(self.arm_traj))
                         continue
                     # print('here2')
                     agent_joint_angles = self.arm_traj[self.arm_traj_idx]
                     curr_pos, curr_orient = self.human.get_pos_orient(18)
-                    print('idx', self.arm_traj_idx, 'curr', curr_pos)
                     # self.arm_traj_idx += 1
 
                     if self.repeat_traj:
@@ -262,11 +267,26 @@ class AssistiveEnv(gym.Env):
                 
                 ee_cur_R = R.from_quat([orient[0], orient[1], orient[2], orient[3]])
                 rotation_R = R.from_rotvec(actions[3:])
-                if np.linalg.norm(ee_cur_R.as_quat()) < 1e-6:
+
+                # if scipy.linalg.norm(actions[3:]) < 1e-6:
+                #     rotation_R = R.identity()
+                # else:
+                #     rotation_R = R.from_rotvec(actions[3:])
+
+                if scipy.linalg.norm(ee_cur_R.as_quat()) < 1e-4:
                     ee_cur_R = R.identity()
 
-                if np.linalg.norm(rotation_R.as_quat()) < 1e-6:
+                rot_quat = rotation_R.as_quat()
+
+                print('check nan', rot_quat)
+
+                if np.any(np.isnan(rotation_R.as_quat())) or np.any(np.isinf(rotation_R.as_quat())):
                     rotation_R = R.identity()
+                    print('fixed nan/inf')
+                
+                if scipy.linalg.norm(rotation_R.as_quat()) < 1e-4:
+                    rotation_R = R.identity()
+                print('check quats', ee_cur_R.as_quat(), rotation_R.as_quat())
 
                 new_ee_R = rotation_R * ee_cur_R
                 new_ee_quat = new_ee_R.as_quat()
